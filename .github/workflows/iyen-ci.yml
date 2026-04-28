@@ -1,4 +1,4 @@
-name: IYEN CI
+name: IYEN Fork CI
 
 on:
   pull_request:
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   validate:
-    name: Validate OpenClaw fork changes
+    name: Validate fork-owned changes
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -41,15 +41,39 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Guard fork-owned workflow set
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import sys
+
+          active = sorted(path.name for path in pathlib.Path('.github/workflows').glob('*.yml'))
+          expected = ['iyen-ci.yml']
+          if active != expected:
+              print(f'Active workflows must be fork-owned only: expected {expected}, got {active}', file=sys.stderr)
+              sys.exit(1)
+
+          reference_dir = pathlib.Path('.github/workflows-upstream-reference')
+          if not reference_dir.is_dir():
+              print('Missing upstream workflow reference directory', file=sys.stderr)
+              sys.exit(1)
+
+          print('Active workflow set is fork-owned only.')
+          print(f'Upstream references available: {len(sorted(reference_dir.glob("*.yml")))} files')
+          PY
+
       - name: Validate workflow YAML can parse
         run: |
           python3 - <<'PY'
           import pathlib
           import yaml
-          for path in sorted(pathlib.Path('.github/workflows').glob('*.yml')):
-              with path.open() as fh:
-                  yaml.safe_load(fh)
-              print(f'{path}: ok')
+
+          roots = [pathlib.Path('.github/workflows'), pathlib.Path('.github/workflows-upstream-reference')]
+          for root in roots:
+              for path in sorted(root.glob('*.yml')):
+                  with path.open() as fh:
+                      yaml.safe_load(fh)
+                  print(f'{path}: ok')
           PY
 
       - name: Check generated config schema
@@ -89,7 +113,7 @@ jobs:
         run: pnpm tsgo:core:test
 
   openai-extension-smoke:
-    name: OpenAI extension smoke
+    name: Fork OpenAI extension smoke
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
