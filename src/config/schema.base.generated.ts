@@ -21701,6 +21701,53 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
             },
             additionalProperties: false,
           },
+          prReviewDecision: {
+            type: "object",
+            properties: {
+              enabled: {
+                type: "boolean",
+              },
+              githubTokenEnv: {
+                type: "string",
+                minLength: 1,
+              },
+              reviewLabel: {
+                type: "string",
+                minLength: 1,
+              },
+              reReviewOnRequestChanges: {
+                type: "boolean",
+              },
+              allowApproval: {
+                type: "boolean",
+              },
+              requireHumanApproval: {
+                type: "boolean",
+              },
+              repoAllowlist: {
+                type: "array",
+                items: {
+                  type: "string",
+                  minLength: 1,
+                },
+              },
+              iyenReviewerLogins: {
+                type: "array",
+                items: {
+                  type: "string",
+                  minLength: 1,
+                },
+              },
+              iyenAuthorLogins: {
+                type: "array",
+                items: {
+                  type: "string",
+                  minLength: 1,
+                },
+              },
+            },
+            additionalProperties: false,
+          },
         },
         additionalProperties: false,
       },
@@ -28898,6 +28945,10 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
       tags: ["security", "auth"],
     },
     "iyensystem.prReviewTrigger.githubTokenEnv": {
+      sensitive: true,
+      tags: ["security", "auth"],
+    },
+    "iyensystem.prReviewDecision.githubTokenEnv": {
       sensitive: true,
       tags: ["security", "auth"],
     },
