@@ -1,0 +1,118 @@
+name: IYEN CI
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+  push:
+    branches:
+      - main
+      - "iyen/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: iyen-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate OpenClaw fork changes
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate workflow YAML can parse
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import yaml
+          for path in sorted(pathlib.Path('.github/workflows').glob('*.yml')):
+              with path.open() as fh:
+                  yaml.safe_load(fh)
+              print(f'{path}: ok')
+          PY
+
+      - name: Check generated config schema
+        run: pnpm config:schema:check
+
+      - name: Run IYEN gateway hook tests
+        run: |
+          files=(
+            src/gateway/issue-triage.test.ts
+            src/gateway/server.issue-triage-hook.test.ts
+            src/gateway/pr-review-trigger.test.ts
+            src/gateway/server.pr-review-trigger-hook.test.ts
+            src/gateway/pr-review-decision.test.ts
+            src/gateway/server.pr-review-decision-hook.test.ts
+          )
+          existing=()
+          for file in "${files[@]}"; do
+            if [ -f "$file" ]; then
+              existing+=("$file")
+            fi
+          done
+          if [ "${#existing[@]}" -eq 0 ]; then
+            echo "No IYEN gateway hook tests present in this ref; skipping."
+            exit 0
+          fi
+          pnpm exec vitest run --config test/vitest/vitest.gateway.config.ts "${existing[@]}"
+
+      - name: Run IYEN config tests
+        run: |
+          if [ ! -f src/config/zod-schema.iyensystem.test.ts ]; then
+            echo "IYENsystem config tests are not present in this ref; skipping."
+            exit 0
+          fi
+          pnpm exec vitest run src/config/zod-schema.iyensystem.test.ts
+
+      - name: Typecheck core tests
+        run: pnpm tsgo:core:test
+
+  openai-extension-smoke:
+    name: OpenAI extension smoke
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run OpenAI extension batch
+        run: pnpm test:extensions:batch -- openai
