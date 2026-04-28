@@ -15,6 +15,10 @@ import type { createSubsystemLogger } from "../../logging/subsystem.js";
 import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import { type HookAgentDispatchPayload, type HooksConfigResolved } from "../hooks.js";
 import { createIssueTriageService } from "../issue-triage-service.js";
+import {
+  createPrReviewTriggerService,
+  resolvePrReviewTriggerPolicy,
+} from "../pr-review-trigger-service.js";
 import { createHooksRequestHandler, type HookClientIpConfig } from "./hooks-request-handler.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
@@ -134,6 +138,8 @@ export function createGatewayHooksRequestHandler(params: {
     logHooks,
     getClientIpConfig,
     issueTriageService: createIssueTriageService({ cfg: getRuntimeConfig(), deps }),
+    prReviewTriggerService: createPrReviewTriggerService(getRuntimeConfig()),
+    prReviewTriggerPolicy: resolvePrReviewTriggerPolicy(getRuntimeConfig()),
     dispatchAgentHook,
     dispatchWakeHook,
   });
