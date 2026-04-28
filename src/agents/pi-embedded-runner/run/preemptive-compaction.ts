@@ -38,6 +38,25 @@ export function estimatePrePromptTokens(params: {
   return Math.max(0, Math.ceil(estimated * SAFETY_MARGIN));
 }
 
+/**
+ * IYEN E-step: engine hint.
+ *
+ * 외부 context engine (예: session-branch-engine) 이 이미 budget pressure 를 관찰했을 때,
+ * runner 가 overflowTokens 계산에 의존하지 않고 결정을 조기에 귀다아주기 위한 힌트.
+ *
+ *   - rotate / block: overflow 도달 전 강제 compaction (compact_only) 로 진입
+ *   - toolStoreThrottle: 아직 prompt overflow 전이지만 tool result 압축을 먼저
+ *     해주면 좋다 → truncate_tool_results_only 로 진입
+ *   - ok / summarize: 고유 계산 결과 따름
+ */
+export interface PreemptiveCompactionEngineHint {
+  rotationLevel?: "ok" | "summarize" | "toolStoreThrottle" | "rotate" | "block";
+  /** 디버그/로그용. engine 에서 추정한 ratio. */
+  tokenRatio?: number;
+  /** engine 이 볼 때 contextTokenBudget 의 hard cap 이 더 작으면 그 값. */
+  enforcedBudget?: number;
+}
+
 export function shouldPreemptivelyCompactBeforePrompt(params: {
   messages: AgentMessage[];
   unwindowedMessages?: AgentMessage[];
@@ -46,6 +65,7 @@ export function shouldPreemptivelyCompactBeforePrompt(params: {
   contextTokenBudget: number;
   reserveTokens: number;
   toolResultMaxChars?: number;
+  engineHint?: PreemptiveCompactionEngineHint;
 }): {
   route: PreemptiveCompactionRoute;
   shouldCompact: boolean;
@@ -54,6 +74,7 @@ export function shouldPreemptivelyCompactBeforePrompt(params: {
   overflowTokens: number;
   toolResultReducibleChars: number;
   effectiveReserveTokens: number;
+  engineHintApplied: boolean;
 } {
   let messagesForPressure = params.messages;
   let estimatedPromptTokens = estimatePrePromptTokens({
@@ -107,6 +128,27 @@ export function shouldPreemptivelyCompactBeforePrompt(params: {
       route = "compact_then_truncate";
     }
   }
+
+  // IYEN E-step: engine hint 가 일으키지 않은 overflow 를 계산한다돤,
+  // engine 이 이미 위험 신호를 주면 route 를 조정한다. 그러나 fits/route 를
+  // 더 안전한 쪽으로만 바꾼다 (이미 항상 compaction 을 요구하는 route 를
+  // engine hint 가 완화시키지는 않도록).
+  let engineHintApplied = false;
+  const engineHint = params.engineHint;
+  if (engineHint && (route === "fits" || route === "truncate_tool_results_only")) {
+    if (engineHint.rotationLevel === "rotate" || engineHint.rotationLevel === "block") {
+      route = "compact_only";
+      engineHintApplied = true;
+    } else if (
+      engineHint.rotationLevel === "toolStoreThrottle" &&
+      route === "fits" &&
+      toolResultReducibleChars > 0
+    ) {
+      route = "truncate_tool_results_only";
+      engineHintApplied = true;
+    }
+  }
+
   return {
     route,
     shouldCompact: route === "compact_only" || route === "compact_then_truncate",
@@ -115,5 +157,6 @@ export function shouldPreemptivelyCompactBeforePrompt(params: {
     overflowTokens,
     toolResultReducibleChars,
     effectiveReserveTokens,
+    engineHintApplied,
   };
 }
