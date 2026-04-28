@@ -1176,7 +1176,6 @@ export const agentHandlers: GatewayRequestHandlers = {
           messageChannel: originMessageChannel,
           runId,
           lane: request.lane,
-          cleanupBundleMcpOnRunEnd: request.cleanupBundleMcpOnRunEnd === true,
           modelRun: request.modelRun === true,
           promptMode: request.promptMode,
           extraSystemPrompt: request.extraSystemPrompt,
