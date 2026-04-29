@@ -12,8 +12,9 @@ import { resolveOpenClawAgentDir } from "./agent-paths.js";
 import { isAnthropicOAuthToken } from "./anthropic-transport-stream.js";
 import { lookupCachedContextTokens, MODEL_CONTEXT_TOKEN_CACHE } from "./context-cache.js";
 import { CONTEXT_WINDOW_RUNTIME_STATE } from "./context-runtime-state.js";
-import { resolveModelAuthMode } from "./model-auth.js";
+import { resolveModelAuthMode, type ModelAuthMode } from "./model-auth.js";
 import { normalizeProviderId } from "./model-selection.js";
+import { lookupProviderHardCap } from "./provider-cap-registry.js";
 
 export { resetContextWindowCacheForTest } from "./context-runtime-state.js";
 
@@ -444,6 +445,30 @@ function isClaudeOpus47Model(model: string): boolean {
   return CLAUDE_OPUS_47_MODEL_PREFIXES.some((prefix) => modelId.startsWith(prefix));
 }
 
+function clampWithProviderHardCap(
+  value: number | undefined,
+  ref: { provider: string; model: string } | null | undefined,
+  context1mRequested: boolean,
+  credentialMode: ModelAuthMode | undefined,
+): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return value;
+  }
+  if (!ref) {
+    return value;
+  }
+  const hardCap = lookupProviderHardCap({
+    provider: ref.provider,
+    model: ref.model,
+    context1mRequested,
+    credentialMode,
+  });
+  if (hardCap === undefined) {
+    return value;
+  }
+  return Math.min(value, hardCap);
+}
+
 export function resolveContextTokensForModel(params: {
   cfg?: OpenClawConfig;
   provider?: string;
@@ -462,16 +487,28 @@ export function resolveContextTokensForModel(params: {
     model: params.model,
   });
   const explicitProvider = params.provider?.trim();
+
+  let credentialMode: ModelAuthMode | undefined;
+  let context1mRequested = false;
   if (ref) {
     const modelParams = resolveConfiguredModelParams(params.cfg, ref.provider, ref.model);
-    if (modelParams?.context1m === true && isAnthropic1MModel(ref.provider, ref.model)) {
-      const apiKey = typeof params.apiKey === "string" ? params.apiKey : "";
-      const apiKeyIndicatesOAuth = apiKey !== "" && isAnthropicOAuthToken(apiKey);
-      const authStoreMode =
-        apiKey === "" ? resolveModelAuthMode(ref.provider, params.cfg) : undefined;
-      const authStoreIndicatesOAuth = authStoreMode !== undefined && authStoreMode !== "api-key";
-      if (!apiKeyIndicatesOAuth && !authStoreIndicatesOAuth) {
-        return ANTHROPIC_CONTEXT_1M_TOKENS;
+    context1mRequested = modelParams?.context1m === true;
+    const apiKey = typeof params.apiKey === "string" ? params.apiKey : "";
+    if (apiKey !== "") {
+      credentialMode = isAnthropicOAuthToken(apiKey) ? "oauth" : "api-key";
+    } else {
+      credentialMode = resolveModelAuthMode(ref.provider, params.cfg);
+    }
+
+    if (context1mRequested && isAnthropic1MModel(ref.provider, ref.model)) {
+      const credentialAllowsOneM = credentialMode === undefined || credentialMode === "api-key";
+      if (credentialAllowsOneM) {
+        return clampWithProviderHardCap(
+          ANTHROPIC_CONTEXT_1M_TOKENS,
+          ref,
+          context1mRequested,
+          credentialMode,
+        );
       }
     }
     // Only do the config direct scan when the caller explicitly passed a
@@ -488,13 +525,18 @@ export function resolveContextTokensForModel(params: {
         ref.model,
       );
       if (configuredWindow !== undefined) {
-        return configuredWindow;
+        return clampWithProviderHardCap(configuredWindow, ref, context1mRequested, credentialMode);
       }
     }
   }
 
   if (explicitProvider && ref && shouldUseAnthropicOpus47ContextWindow(ref)) {
-    return ANTHROPIC_CONTEXT_1M_TOKENS;
+    return clampWithProviderHardCap(
+      ANTHROPIC_CONTEXT_1M_TOKENS,
+      ref,
+      context1mRequested,
+      credentialMode,
+    );
   }
 
   // When provider is explicitly given and the model ID is bare (no slash),
@@ -515,7 +557,7 @@ export function resolveContextTokensForModel(params: {
       { allowAsyncLoad: params.allowAsyncLoad },
     );
     if (qualifiedResult !== undefined) {
-      return qualifiedResult;
+      return clampWithProviderHardCap(qualifiedResult, ref, context1mRequested, credentialMode);
     }
   }
 
@@ -525,7 +567,7 @@ export function resolveContextTokensForModel(params: {
     allowAsyncLoad: params.allowAsyncLoad,
   });
   if (bareResult !== undefined) {
-    return bareResult;
+    return clampWithProviderHardCap(bareResult, ref, context1mRequested, credentialMode);
   }
 
   // When provider is implicit, try qualified as a last resort so inferred
@@ -537,9 +579,17 @@ export function resolveContextTokensForModel(params: {
       { allowAsyncLoad: params.allowAsyncLoad },
     );
     if (qualifiedResult !== undefined) {
-      return qualifiedResult;
+      return clampWithProviderHardCap(qualifiedResult, ref, context1mRequested, credentialMode);
     }
   }
 
-  return params.fallbackContextTokens;
+  if (params.fallbackContextTokens !== undefined) {
+    return clampWithProviderHardCap(
+      params.fallbackContextTokens,
+      ref,
+      context1mRequested,
+      credentialMode,
+    );
+  }
+  return undefined;
 }
