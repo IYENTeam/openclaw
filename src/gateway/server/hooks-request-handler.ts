@@ -31,6 +31,12 @@ import {
 } from "../hooks.js";
 import { parseIssueTriageText, triageIssue, type IssueTriageService } from "../issue-triage.js";
 import { resolveRequestClientIp } from "../net.js";
+import {
+  parsePrReviewTriggerText,
+  triggerPrReview,
+  type PrReviewTriggerPolicy,
+  type PrReviewTriggerService,
+} from "../pr-review-trigger.js";
 import { DEDUPE_MAX, DEDUPE_TTL_MS } from "../server-constants.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
@@ -49,6 +55,8 @@ type HookDispatchers = {
   dispatchWakeHook: (value: { text: string; mode: "now" | "next-heartbeat" }) => void;
   dispatchAgentHook: (value: HookAgentDispatchPayload) => string;
   issueTriageService?: IssueTriageService;
+  prReviewTriggerService?: PrReviewTriggerService;
+  prReviewTriggerPolicy?: PrReviewTriggerPolicy;
 };
 
 type HookReplayEntry = {
@@ -98,6 +106,8 @@ export function createHooksRequestHandler(
     dispatchWakeHook,
     getClientIpConfig,
     issueTriageService,
+    prReviewTriggerService,
+    prReviewTriggerPolicy,
   } = opts;
   const hookReplayCache = new Map<string, HookReplayEntry>();
   const hookAuthLimiter = createAuthRateLimiter({
@@ -270,6 +280,29 @@ export function createHooksRequestHandler(
         return true;
       }
       const result = await triageIssue(parsed.issue, issueTriageService);
+      if (!result.ok) {
+        sendJson(res, result.httpStatus, { ok: false, error: result.error });
+        return true;
+      }
+      sendJson(res, 200, result);
+      return true;
+    }
+
+    if (subPath === "pr-review-trigger") {
+      if (!prReviewTriggerService) {
+        sendJson(res, 503, { ok: false, error: "PR review trigger service is not configured" });
+        return true;
+      }
+      const parsed = parsePrReviewTriggerText((payload as Record<string, unknown>).text);
+      if (!parsed.ok) {
+        sendJson(res, 400, { ok: false, error: parsed.error });
+        return true;
+      }
+      const result = await triggerPrReview(
+        parsed.pullRequest,
+        prReviewTriggerService,
+        prReviewTriggerPolicy,
+      );
       if (!result.ok) {
         sendJson(res, result.httpStatus, { ok: false, error: result.error });
         return true;

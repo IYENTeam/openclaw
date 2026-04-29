@@ -21665,6 +21665,45 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
         description:
           "Inbound webhook automation surface for mapping external events into wake or agent actions in OpenClaw. Keep this locked down with explicit token/session/agent controls before exposing it beyond trusted networks.",
       },
+      iyensystem: {
+        type: "object",
+        properties: {
+          enabled: {
+            type: "boolean",
+          },
+          prReviewTrigger: {
+            type: "object",
+            properties: {
+              enabled: {
+                type: "boolean",
+              },
+              githubTokenEnv: {
+                type: "string",
+                minLength: 1,
+              },
+              reviewLabel: {
+                type: "string",
+                minLength: 1,
+              },
+              includeDrafts: {
+                type: "boolean",
+              },
+              minChangedFiles: {
+                type: "integer",
+                minimum: 0,
+                maximum: 9007199254740991,
+              },
+              minTotalChanges: {
+                type: "integer",
+                minimum: 0,
+                maximum: 9007199254740991,
+              },
+            },
+            additionalProperties: false,
+          },
+        },
+        additionalProperties: false,
+      },
       web: {
         type: "object",
         properties: {
@@ -28855,6 +28894,10 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
       tags: ["security", "auth", "media"],
     },
     "hooks.issueTriage.githubTokenEnv": {
+      sensitive: true,
+      tags: ["security", "auth"],
+    },
+    "iyensystem.prReviewTrigger.githubTokenEnv": {
       sensitive: true,
       tags: ["security", "auth"],
     },

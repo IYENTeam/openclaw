@@ -201,6 +201,8 @@ export function createHooksHandler(
         dispatchWakeHook?: HooksHandlerDeps["dispatchWakeHook"];
         dispatchAgentHook?: HooksHandlerDeps["dispatchAgentHook"];
         issueTriageService?: HooksHandlerDeps["issueTriageService"];
+        prReviewTriggerService?: HooksHandlerDeps["prReviewTriggerService"];
+        prReviewTriggerPolicy?: HooksHandlerDeps["prReviewTriggerPolicy"];
         bindHost?: string;
         getClientIpConfig?: HooksHandlerDeps["getClientIpConfig"];
       },
@@ -220,6 +222,8 @@ export function createHooksHandler(
     dispatchWakeHook: options.dispatchWakeHook ?? (() => {}),
     dispatchAgentHook: options.dispatchAgentHook ?? (() => "run-1"),
     issueTriageService: options.issueTriageService,
+    prReviewTriggerService: options.prReviewTriggerService,
+    prReviewTriggerPolicy: options.prReviewTriggerPolicy,
   });
 }
 

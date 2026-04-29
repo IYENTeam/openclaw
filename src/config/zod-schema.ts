@@ -24,6 +24,7 @@ import {
   HooksIssueTriageSchema,
   InternalHooksSchema,
 } from "./zod-schema.hooks.js";
+import { IyenSystemSchema } from "./zod-schema.iyensystem.js";
 import { ChannelsSchema } from "./zod-schema.providers.js";
 import { ProxyConfigSchema } from "./zod-schema.proxy.js";
 import { sensitive } from "./zod-schema.sensitive.js";
@@ -670,6 +671,7 @@ export const OpenClawSchema = z
       })
       .strict()
       .optional(),
+    iyensystem: IyenSystemSchema,
     web: z
       .object({
         enabled: z.boolean().optional(),
