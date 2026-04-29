@@ -188,7 +188,7 @@ function adjustMaxTokensForThinking(params: {
   return { maxTokens, thinkingBudget };
 }
 
-function isAnthropicOAuthToken(apiKey: string): boolean {
+export function isAnthropicOAuthToken(apiKey: string): boolean {
   return apiKey.includes("sk-ant-oat");
 }
 

@@ -12,6 +12,10 @@ const contextTestState = vi.hoisted(() => {
     discoverModels: vi.fn(() => ({
       getAll: () => state.discoveredModels,
     })),
+    resolveModelAuthModeImpl: (() => undefined) as (
+      provider?: string,
+      cfg?: unknown,
+    ) => string | undefined,
   };
   return state;
 });
@@ -31,6 +35,11 @@ vi.mock("./agent-paths.js", () => ({
 vi.mock("./pi-model-discovery-runtime.js", () => ({
   discoverAuthStorage: contextTestState.discoverAuthStorage,
   discoverModels: contextTestState.discoverModels,
+}));
+
+vi.mock("./model-auth.js", () => ({
+  resolveModelAuthMode: (provider?: string, cfg?: unknown) =>
+    contextTestState.resolveModelAuthModeImpl(provider, cfg),
 }));
 
 function mockContextDeps(params: {
@@ -110,6 +119,7 @@ describe("lookupContextTokens", () => {
     contextTestState.ensureOpenClawModelsJson.mockClear();
     contextTestState.discoverAuthStorage.mockClear();
     contextTestState.discoverModels.mockClear();
+    contextTestState.resolveModelAuthModeImpl = () => undefined;
     contextModule.resetContextWindowCacheForTest();
   });
 
@@ -479,5 +489,103 @@ describe("lookupContextTokens", () => {
       model: "glm-5",
     });
     expect(result).toBe(256_000);
+  });
+
+  it("resolveContextTokensForModel returns 1M for Anthropic context1m on API-key auth", async () => {
+    mockDiscoveryDeps([{ id: "claude-opus-4-6", contextWindow: 200_000 }]);
+
+    const cfg = {
+      agents: {
+        defaults: {
+          models: {
+            "anthropic/claude-opus-4-6": { params: { context1m: true } },
+          },
+        },
+      },
+    };
+    const { resolveContextTokensForModel } = await importContextModule();
+
+    const result = resolveContextTokensForModel({
+      cfg: cfg as never,
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+      apiKey: "sk-ant-api01-real-api-key",
+    });
+    expect(result).toBe(1_048_576);
+  });
+
+  it("resolveContextTokensForModel falls back to standard window when context1m is requested with OAuth/Claude CLI auth", async () => {
+    mockDiscoveryDeps([{ id: "claude-opus-4-6", contextWindow: 200_000 }]);
+
+    const cfg = {
+      agents: {
+        defaults: {
+          models: {
+            "anthropic/claude-opus-4-6": { params: { context1m: true } },
+          },
+        },
+      },
+    };
+    const { lookupContextTokens, resolveContextTokensForModel } = await importContextModule();
+    lookupContextTokens("claude-opus-4-6");
+    await flushAsyncWarmup();
+
+    const result = resolveContextTokensForModel({
+      cfg: cfg as never,
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+      apiKey: "sk-ant-oat01-oauth-token",
+    });
+    expect(result).toBe(200_000);
+  });
+
+  it("resolveContextTokensForModel falls back to standard window when context1m is requested but auth-profiles store reports OAuth (no apiKey passed)", async () => {
+    mockDiscoveryDeps([{ id: "claude-opus-4-6", contextWindow: 200_000 }]);
+    contextTestState.resolveModelAuthModeImpl = (provider) =>
+      provider === "anthropic" ? "oauth" : undefined;
+
+    const cfg = {
+      agents: {
+        defaults: {
+          models: {
+            "anthropic/claude-opus-4-6": { params: { context1m: true } },
+          },
+        },
+      },
+    };
+    const { lookupContextTokens, resolveContextTokensForModel } = await importContextModule();
+    lookupContextTokens("claude-opus-4-6");
+    await flushAsyncWarmup();
+
+    const result = resolveContextTokensForModel({
+      cfg: cfg as never,
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+    });
+    expect(result).toBe(200_000);
+  });
+
+  it("resolveContextTokensForModel returns 1M when context1m is requested and auth-profiles store reports api-key (no apiKey passed)", async () => {
+    mockDiscoveryDeps([{ id: "claude-opus-4-6", contextWindow: 200_000 }]);
+    contextTestState.resolveModelAuthModeImpl = (provider) =>
+      provider === "anthropic" ? "api-key" : undefined;
+
+    const cfg = {
+      agents: {
+        defaults: {
+          models: {
+            "anthropic/claude-opus-4-6": { params: { context1m: true } },
+          },
+        },
+      },
+    };
+    const { resolveContextTokensForModel } = await importContextModule();
+
+    const result = resolveContextTokensForModel({
+      cfg: cfg as never,
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+    });
+    expect(result).toBe(1_048_576);
   });
 });

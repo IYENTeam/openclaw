@@ -9,8 +9,10 @@ import { computeBackoff, type BackoffPolicy } from "../infra/backoff.js";
 import { consumeRootOptionToken, FLAG_TERMINATOR } from "../infra/cli-root-options.js";
 import { normalizeLowercaseStringOrEmpty } from "../shared/string-coerce.js";
 import { resolveOpenClawAgentDir } from "./agent-paths.js";
+import { isAnthropicOAuthToken } from "./anthropic-transport-stream.js";
 import { lookupCachedContextTokens, MODEL_CONTEXT_TOKEN_CACHE } from "./context-cache.js";
 import { CONTEXT_WINDOW_RUNTIME_STATE } from "./context-runtime-state.js";
+import { resolveModelAuthMode } from "./model-auth.js";
 import { normalizeProviderId } from "./model-selection.js";
 
 export { resetContextWindowCacheForTest } from "./context-runtime-state.js";
@@ -449,6 +451,7 @@ export function resolveContextTokensForModel(params: {
   contextTokensOverride?: number;
   fallbackContextTokens?: number;
   allowAsyncLoad?: boolean;
+  apiKey?: string;
 }): number | undefined {
   if (typeof params.contextTokensOverride === "number" && params.contextTokensOverride > 0) {
     return params.contextTokensOverride;
@@ -462,7 +465,14 @@ export function resolveContextTokensForModel(params: {
   if (ref) {
     const modelParams = resolveConfiguredModelParams(params.cfg, ref.provider, ref.model);
     if (modelParams?.context1m === true && isAnthropic1MModel(ref.provider, ref.model)) {
-      return ANTHROPIC_CONTEXT_1M_TOKENS;
+      const apiKey = typeof params.apiKey === "string" ? params.apiKey : "";
+      const apiKeyIndicatesOAuth = apiKey !== "" && isAnthropicOAuthToken(apiKey);
+      const authStoreMode =
+        apiKey === "" ? resolveModelAuthMode(ref.provider, params.cfg) : undefined;
+      const authStoreIndicatesOAuth = authStoreMode !== undefined && authStoreMode !== "api-key";
+      if (!apiKeyIndicatesOAuth && !authStoreIndicatesOAuth) {
+        return ANTHROPIC_CONTEXT_1M_TOKENS;
+      }
     }
     // Only do the config direct scan when the caller explicitly passed a
     // provider. When provider is inferred from a slash in the model string
