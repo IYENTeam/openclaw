@@ -16,6 +16,10 @@ import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import { type HookAgentDispatchPayload, type HooksConfigResolved } from "../hooks.js";
 import { createIssueTriageService } from "../issue-triage-service.js";
 import {
+  createPrReviewDecisionService,
+  resolvePrReviewDecisionPolicy,
+} from "../pr-review-decision-service.js";
+import {
   createPrReviewTriggerService,
   resolvePrReviewTriggerPolicy,
 } from "../pr-review-trigger-service.js";
@@ -140,6 +144,8 @@ export function createGatewayHooksRequestHandler(params: {
     issueTriageService: createIssueTriageService({ cfg: getRuntimeConfig(), deps }),
     prReviewTriggerService: createPrReviewTriggerService(getRuntimeConfig()),
     prReviewTriggerPolicy: resolvePrReviewTriggerPolicy(getRuntimeConfig()),
+    prReviewDecisionService: createPrReviewDecisionService(getRuntimeConfig()),
+    prReviewDecisionPolicy: resolvePrReviewDecisionPolicy(getRuntimeConfig()),
     dispatchAgentHook,
     dispatchWakeHook,
   });

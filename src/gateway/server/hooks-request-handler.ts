@@ -32,6 +32,12 @@ import {
 import { parseIssueTriageText, triageIssue, type IssueTriageService } from "../issue-triage.js";
 import { resolveRequestClientIp } from "../net.js";
 import {
+  decidePrReview,
+  parsePrReviewDecisionText,
+  type PrReviewDecisionPolicy,
+  type PrReviewDecisionService,
+} from "../pr-review-decision.js";
+import {
   parsePrReviewTriggerText,
   triggerPrReview,
   type PrReviewTriggerPolicy,
@@ -57,6 +63,8 @@ type HookDispatchers = {
   issueTriageService?: IssueTriageService;
   prReviewTriggerService?: PrReviewTriggerService;
   prReviewTriggerPolicy?: PrReviewTriggerPolicy;
+  prReviewDecisionService?: PrReviewDecisionService;
+  prReviewDecisionPolicy?: PrReviewDecisionPolicy;
 };
 
 type HookReplayEntry = {
@@ -108,6 +116,8 @@ export function createHooksRequestHandler(
     issueTriageService,
     prReviewTriggerService,
     prReviewTriggerPolicy,
+    prReviewDecisionService,
+    prReviewDecisionPolicy,
   } = opts;
   const hookReplayCache = new Map<string, HookReplayEntry>();
   const hookAuthLimiter = createAuthRateLimiter({
@@ -302,6 +312,25 @@ export function createHooksRequestHandler(
         parsed.pullRequest,
         prReviewTriggerService,
         prReviewTriggerPolicy,
+      );
+      if (!result.ok) {
+        sendJson(res, result.httpStatus, { ok: false, error: result.error });
+        return true;
+      }
+      sendJson(res, 200, result);
+      return true;
+    }
+
+    if (subPath === "pr-review-decision") {
+      const parsed = parsePrReviewDecisionText((payload as Record<string, unknown>).text);
+      if (!parsed.ok) {
+        sendJson(res, 400, { ok: false, error: parsed.error });
+        return true;
+      }
+      const result = await decidePrReview(
+        parsed.event,
+        prReviewDecisionService,
+        prReviewDecisionPolicy,
       );
       if (!result.ok) {
         sendJson(res, result.httpStatus, { ok: false, error: result.error });

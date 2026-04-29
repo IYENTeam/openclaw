@@ -203,6 +203,8 @@ export function createHooksHandler(
         issueTriageService?: HooksHandlerDeps["issueTriageService"];
         prReviewTriggerService?: HooksHandlerDeps["prReviewTriggerService"];
         prReviewTriggerPolicy?: HooksHandlerDeps["prReviewTriggerPolicy"];
+        prReviewDecisionService?: HooksHandlerDeps["prReviewDecisionService"];
+        prReviewDecisionPolicy?: HooksHandlerDeps["prReviewDecisionPolicy"];
         bindHost?: string;
         getClientIpConfig?: HooksHandlerDeps["getClientIpConfig"];
       },
@@ -224,6 +226,8 @@ export function createHooksHandler(
     issueTriageService: options.issueTriageService,
     prReviewTriggerService: options.prReviewTriggerService,
     prReviewTriggerPolicy: options.prReviewTriggerPolicy,
+    prReviewDecisionService: options.prReviewDecisionService,
+    prReviewDecisionPolicy: options.prReviewDecisionPolicy,
   });
 }
 
