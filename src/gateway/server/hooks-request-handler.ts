@@ -411,6 +411,7 @@ export function createHooksRequestHandler(
         ...normalized.value,
         idempotencyKey,
         sessionKey: normalizedDispatchSessionKey,
+        sourcePath: `${basePath}/agent`,
         agentId: targetAgentId,
         externalContentSource: "webhook",
       });
@@ -508,6 +509,7 @@ export function createHooksRequestHandler(
             agentId: targetAgentId,
             wakeMode: mapped.action.wakeMode,
             sessionKey: normalizedDispatchSessionKey,
+            sourcePath: `${basePath}/${subPath}`,
             deliver: resolveHookDeliver(mapped.action.deliver),
             channel,
             to: mapped.action.to,

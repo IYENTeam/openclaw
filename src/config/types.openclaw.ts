@@ -2,6 +2,7 @@ import type {
   SilentReplyPolicyShape,
   SilentReplyRewriteShape,
 } from "../shared/silent-reply-policy.js";
+import type { AccessGroupsConfig } from "./types.access-groups.js";
 import type { AcpConfig } from "./types.acp.js";
 import type { AgentBinding, AgentsConfig } from "./types.agents.js";
 import type { ApprovalsConfig } from "./types.approvals.js";
@@ -10,14 +11,10 @@ import type { DiagnosticsConfig, LoggingConfig, SessionConfig, WebConfig } from 
 import type { BrowserConfig } from "./types.browser.js";
 import type { ChannelsConfig } from "./types.channels.js";
 import type { CliConfig } from "./types.cli.js";
+import type { CommitmentsConfig } from "./types.commitments.js";
 import type { CrestodianConfig } from "./types.crestodian.js";
 import type { CronConfig } from "./types.cron.js";
-import type {
-  CanvasHostConfig,
-  DiscoveryConfig,
-  GatewayConfig,
-  TalkConfig,
-} from "./types.gateway.js";
+import type { DiscoveryConfig, GatewayConfig, TalkConfig } from "./types.gateway.js";
 import type { HooksConfig } from "./types.hooks.js";
 import type { IyenSystemConfig } from "./types.iyensystem.js";
 import type { McpConfig } from "./types.mcp.js";
@@ -50,6 +47,7 @@ export type OpenClawConfig = {
     lastTouchedAt?: string;
   };
   auth?: AuthConfig;
+  accessGroups?: AccessGroupsConfig;
   acp?: AcpConfig;
   env?: {
     /** Opt-in: import missing secrets from a login shell environment (exec `$SHELL -l -c 'env -0'`). */
@@ -130,11 +128,11 @@ export type OpenClawConfig = {
   web?: WebConfig;
   channels?: ChannelsConfig;
   cron?: CronConfig;
+  commitments?: CommitmentsConfig;
   hooks?: HooksConfig;
   /** Safe-default IYENsystem integrations. All actions are opt-in and human-review oriented. */
   iyensystem?: IyenSystemConfig;
   discovery?: DiscoveryConfig;
-  canvasHost?: CanvasHostConfig;
   talk?: TalkConfig;
   gateway?: GatewayConfig;
   memory?: MemoryConfig;

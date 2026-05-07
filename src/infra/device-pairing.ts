@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { normalizeDeviceAuthScopes } from "../shared/device-auth.js";
 import {
   resolveBootstrapProfileScopesForRole,
+  resolveBootstrapProfileScopesForRoles,
   type DeviceBootstrapProfile,
 } from "../shared/device-bootstrap-profile.js";
 import {
@@ -12,11 +13,11 @@ import {
 import {
   createAsyncLock,
   pruneExpiredPending,
-  readDurableJsonFile,
+  readJsonIfExists,
   reconcilePendingPairingRequests,
   coercePairingStateRecord,
   resolvePairingPaths,
-  writeJsonAtomic,
+  writeJson,
 } from "./pairing-files.js";
 import { rejectPendingPairingRequest } from "./pairing-pending.js";
 import { generatePairingToken, verifyPairingToken } from "./pairing-token.js";
@@ -153,8 +154,8 @@ export function formatDevicePairingForbiddenMessage(result: DevicePairingForbidd
 async function loadState(baseDir?: string): Promise<DevicePairingStateFile> {
   const { pendingPath, pairedPath } = resolvePairingPaths(baseDir, "devices");
   const [pending, paired] = await Promise.all([
-    readDurableJsonFile<unknown>(pendingPath),
-    readDurableJsonFile<unknown>(pairedPath),
+    readJsonIfExists<unknown>(pendingPath),
+    readJsonIfExists<unknown>(pairedPath),
   ]);
   const state: DevicePairingStateFile = {
     pendingById: coercePairingStateRecord<DevicePairingPendingRequest>(pending),
@@ -173,16 +174,16 @@ async function persistState(
 ) {
   const { pendingPath, pairedPath } = resolvePairingPaths(baseDir, "devices");
   if (target === "pending") {
-    await writeJsonAtomic(pendingPath, state.pendingById);
+    await writeJson(pendingPath, state.pendingById);
     return;
   }
   if (target === "paired") {
-    await writeJsonAtomic(pairedPath, state.pairedByDeviceId);
+    await writeJson(pairedPath, state.pairedByDeviceId);
     return;
   }
   await Promise.all([
-    writeJsonAtomic(pendingPath, state.pendingById),
-    writeJsonAtomic(pairedPath, state.pairedByDeviceId),
+    writeJson(pendingPath, state.pendingById),
+    writeJson(pairedPath, state.pairedByDeviceId),
   ]);
 }
 
@@ -593,26 +594,6 @@ export async function approveDevicePairing(
         scope: roleMismatchScope,
       };
     }
-    const requestedOperatorScopes = requestedScopes.filter((scope) =>
-      scope.startsWith(OPERATOR_SCOPE_PREFIX),
-    );
-    if (requestedOperatorScopes.length > 0) {
-      if (!options?.callerScopes) {
-        return {
-          status: "forbidden",
-          reason: "caller-scopes-required",
-          scope: requestedOperatorScopes[0],
-        };
-      }
-      const missingScope = resolveMissingRequestedScope({
-        role: OPERATOR_ROLE,
-        requestedScopes: requestedOperatorScopes,
-        allowedScopes: options.callerScopes,
-      });
-      if (missingScope) {
-        return { status: "forbidden", reason: "caller-missing-scope", scope: missingScope };
-      }
-    }
     const now = Date.now();
     const existing = state.pairedByDeviceId[pending.deviceId];
     const roles = mergeRoles(existing?.roles, existing?.role, pending.roles, pending.role);
@@ -621,6 +602,7 @@ export async function approveDevicePairing(
       pending.scopes,
     );
     const tokens = existing?.tokens ? { ...existing.tokens } : {};
+    const nextTokenScopesByRole = new Map<string, string[]>();
     for (const roleForToken of requestedRoles) {
       const existingToken = tokens[roleForToken];
       const nextScopes = resolveApprovedTokenScopes({
@@ -630,13 +612,34 @@ export async function approveDevicePairing(
         approvedScopes,
         existing,
       });
-      const now = Date.now();
+      nextTokenScopesByRole.set(roleForToken, nextScopes);
+      if (roleForToken === OPERATOR_ROLE && nextScopes.length > 0) {
+        if (!options?.callerScopes) {
+          return {
+            status: "forbidden",
+            reason: "caller-scopes-required",
+            scope: nextScopes[0],
+          };
+        }
+        const missingScope = resolveMissingRequestedScope({
+          role: OPERATOR_ROLE,
+          requestedScopes: nextScopes,
+          allowedScopes: options.callerScopes,
+        });
+        if (missingScope) {
+          return { status: "forbidden", reason: "caller-missing-scope", scope: missingScope };
+        }
+      }
+    }
+    for (const [roleForToken, nextScopes] of nextTokenScopesByRole) {
+      const existingToken = tokens[roleForToken];
+      const tokenNow = Date.now();
       tokens[roleForToken] = {
         token: newToken(),
         role: roleForToken,
         scopes: nextScopes,
-        createdAtMs: existingToken?.createdAtMs ?? now,
-        rotatedAtMs: existingToken ? now : undefined,
+        createdAtMs: existingToken?.createdAtMs ?? tokenNow,
+        rotatedAtMs: existingToken ? tokenNow : undefined,
         revokedAtMs: undefined,
         lastUsedAtMs: existingToken?.lastUsedAtMs,
       };
@@ -674,7 +677,10 @@ export async function approveBootstrapDevicePairing(
   // node/operator baseline from the verified bootstrap profile without routing
   // operator scope approval through the generic interactive approval checker.
   const approvedRoles = mergeRoles(bootstrapProfile.roles) ?? [];
-  const approvedScopes = normalizeDeviceAuthScopes([...bootstrapProfile.scopes]);
+  const approvedScopes = resolveBootstrapProfileScopesForRoles(
+    approvedRoles,
+    bootstrapProfile.scopes,
+  );
   return await withLock(async () => {
     const state = await loadState(baseDir);
     const pending = state.pendingById[requestId];
@@ -712,6 +718,10 @@ export async function approveBootstrapDevicePairing(
       pending.scopes,
       approvedScopes,
     );
+    const sanitizedApprovedScopes = resolveBootstrapProfileScopesForRoles(
+      approvedRoles,
+      nextApprovedScopes ?? [],
+    );
     const tokens = existing?.tokens ? { ...existing.tokens } : {};
     for (const roleForToken of approvedRoles) {
       const existingToken = tokens[roleForToken];
@@ -738,8 +748,8 @@ export async function approveBootstrapDevicePairing(
       clientMode: pending.clientMode,
       role: pending.role,
       roles,
-      scopes: nextApprovedScopes,
-      approvedScopes: nextApprovedScopes,
+      scopes: sanitizedApprovedScopes,
+      approvedScopes: sanitizedApprovedScopes,
       remoteIp: pending.remoteIp,
       tokens,
       createdAtMs: existing?.createdAtMs ?? now,

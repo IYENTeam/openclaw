@@ -8,7 +8,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { computeBackoff, type BackoffPolicy } from "../infra/backoff.js";
 import { consumeRootOptionToken, FLAG_TERMINATOR } from "../infra/cli-root-options.js";
 import { normalizeLowercaseStringOrEmpty } from "../shared/string-coerce.js";
-import { resolveOpenClawAgentDir } from "./agent-paths.js";
+import { resolveDefaultAgentDir } from "./agent-scope.js";
 import { isAnthropicOAuthToken } from "./anthropic-transport-stream.js";
 import { lookupCachedContextTokens, MODEL_CONTEXT_TOKEN_CACHE } from "./context-cache.js";
 import { CONTEXT_WINDOW_RUNTIME_STATE } from "./context-runtime-state.js";
@@ -18,7 +18,12 @@ import { lookupProviderHardCap } from "./provider-cap-registry.js";
 
 export { resetContextWindowCacheForTest } from "./context-runtime-state.js";
 
-type ModelEntry = { id: string; contextWindow?: number; contextTokens?: number };
+type ModelEntry = {
+  id: string;
+  provider?: string;
+  contextWindow?: number;
+  contextTokens?: number;
+};
 type ModelRegistryLike = {
   getAvailable?: () => ModelEntry[];
   getAll: () => ModelEntry[];
@@ -56,7 +61,7 @@ export function applyDiscoveredContextWindows(params: {
         : typeof model.contextWindow === "number"
           ? Math.trunc(model.contextWindow)
           : undefined;
-    const contextTokens = shouldUseDiscoveredAnthropicOpus47ContextWindow(model.id)
+    const contextTokens = shouldUseDiscoveredAnthropicOpus47ContextWindow(model)
       ? ANTHROPIC_CONTEXT_1M_TOKENS
       : discoveredContextTokens;
     if (!contextTokens || contextTokens <= 0) {
@@ -104,8 +109,7 @@ export function applyConfiguredContextWindows(params: {
 }
 
 function loadModelsConfigRuntime() {
-  CONTEXT_WINDOW_RUNTIME_STATE.modelsConfigRuntimePromise ??= import("./models-config.runtime.js");
-  return CONTEXT_WINDOW_RUNTIME_STATE.modelsConfigRuntimePromise;
+  return CONTEXT_WINDOW_RUNTIME_STATE.modelsConfigRuntimeLoader.load();
 }
 
 function isLikelyOpenClawCliProcess(argv: string[] = process.argv): boolean {
@@ -155,6 +159,7 @@ const SKIP_EAGER_WARMUP_PRIMARY_COMMANDS = new Set([
   "hooks",
   "logs",
   "memory",
+  "message",
   "models",
   "pairing",
   "plugins",
@@ -238,9 +243,11 @@ function ensureContextWindowCacheLoaded(): Promise<void> {
     try {
       const { discoverAuthStorage, discoverModels } =
         await import("./pi-model-discovery-runtime.js");
-      const agentDir = resolveOpenClawAgentDir();
+      const agentDir = resolveDefaultAgentDir(cfg);
       const authStorage = discoverAuthStorage(agentDir);
-      const modelRegistry = discoverModels(authStorage, agentDir) as unknown as ModelRegistryLike;
+      const modelRegistry = discoverModels(authStorage, agentDir, {
+        normalizeModels: false,
+      }) as unknown as ModelRegistryLike;
       const models =
         typeof modelRegistry.getAvailable === "function"
           ? modelRegistry.getAvailable()
@@ -265,10 +272,13 @@ function ensureContextWindowCacheLoaded(): Promise<void> {
 
 export function lookupContextTokens(
   modelId?: string,
-  options?: { allowAsyncLoad?: boolean },
+  options?: { allowAsyncLoad?: boolean; skipRuntimeConfigLoad?: boolean },
 ): number | undefined {
   if (!modelId) {
     return undefined;
+  }
+  if (options?.skipRuntimeConfigLoad) {
+    return lookupCachedContextTokens(modelId);
   }
   if (options?.allowAsyncLoad === false) {
     // Read-only callers still need synchronous config-backed overrides, but they
@@ -422,17 +432,23 @@ function shouldUseAnthropicOpus47ContextWindow(params: {
   );
 }
 
-function shouldUseDiscoveredAnthropicOpus47ContextWindow(modelId: string): boolean {
+function shouldUseDiscoveredAnthropicOpus47ContextWindow(model: ModelEntry): boolean {
+  const provider =
+    typeof model.provider === "string" ? normalizeProviderId(model.provider) : undefined;
+  const modelId = model.id;
   if (!isClaudeOpus47Model(modelId)) {
     return false;
+  }
+  if (provider) {
+    return provider === "anthropic" || provider === "claude-cli";
   }
   const normalized = normalizeLowercaseStringOrEmpty(modelId);
   const slash = normalized.indexOf("/");
   if (slash < 0) {
     return false;
   }
-  const provider = normalizeProviderId(normalized.slice(0, slash));
-  return provider === "claude-cli";
+  const inferredProvider = normalizeProviderId(normalized.slice(0, slash));
+  return inferredProvider === "claude-cli";
 }
 
 function resolveModelFamilyId(modelId: string): string {
@@ -554,7 +570,10 @@ export function resolveContextTokensForModel(params: {
   if (params.provider && ref && !ref.model.includes("/")) {
     const qualifiedResult = lookupContextTokens(
       `${normalizeProviderId(ref.provider)}/${ref.model}`,
-      { allowAsyncLoad: params.allowAsyncLoad },
+      {
+        allowAsyncLoad: params.allowAsyncLoad,
+        skipRuntimeConfigLoad: Boolean(params.cfg),
+      },
     );
     if (qualifiedResult !== undefined) {
       return clampWithProviderHardCap(qualifiedResult, ref, context1mRequested, credentialMode);
@@ -565,6 +584,7 @@ export function resolveContextTokensForModel(params: {
   // (e.g. "google/gemini-2.5-pro") this IS the raw discovery cache key.
   const bareResult = lookupContextTokens(params.model, {
     allowAsyncLoad: params.allowAsyncLoad,
+    skipRuntimeConfigLoad: Boolean(params.cfg),
   });
   if (bareResult !== undefined) {
     return clampWithProviderHardCap(bareResult, ref, context1mRequested, credentialMode);
@@ -576,7 +596,10 @@ export function resolveContextTokensForModel(params: {
   if (!params.provider && ref && !ref.model.includes("/")) {
     const qualifiedResult = lookupContextTokens(
       `${normalizeProviderId(ref.provider)}/${ref.model}`,
-      { allowAsyncLoad: params.allowAsyncLoad },
+      {
+        allowAsyncLoad: params.allowAsyncLoad,
+        skipRuntimeConfigLoad: Boolean(params.cfg),
+      },
     );
     if (qualifiedResult !== undefined) {
       return clampWithProviderHardCap(qualifiedResult, ref, context1mRequested, credentialMode);
