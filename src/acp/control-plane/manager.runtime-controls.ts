@@ -88,23 +88,42 @@ export async function applyManagerRuntimeControls(params: {
           !capabilities.controls.includes("session/set_config_option") ||
           !params.runtime.setConfigOption
         ) {
-          throw createUnsupportedControlError({
-            backend,
-            control: "session/set_config_option",
-          });
-        }
-        for (const [key, value] of configOptions) {
-          if (advertisedKeys.size > 0 && !advertisedKeys.has(key)) {
-            throw new AcpRuntimeError(
-              "ACP_BACKEND_UNSUPPORTED_CONTROL",
-              `ACP backend "${backend}" does not accept config key "${key}".`,
-            );
+          const hasEssential = configOptions.some(([, , priority]) => priority === "essential");
+          if (hasEssential) {
+            throw createUnsupportedControlError({
+              backend,
+              control: "session/set_config_option",
+            });
           }
-          await params.runtime.setConfigOption({
-            handle: params.handle,
-            key,
-            value,
-          });
+        } else {
+          for (const [key, value, priority] of configOptions) {
+            if (advertisedKeys.size > 0 && !advertisedKeys.has(key)) {
+              if (priority === "essential") {
+                throw new AcpRuntimeError(
+                  "ACP_BACKEND_UNSUPPORTED_CONTROL",
+                  `ACP backend "${backend}" does not accept config key "${key}".`,
+                );
+              }
+              continue;
+            }
+            if (priority === "optional") {
+              try {
+                await params.runtime.setConfigOption({
+                  handle: params.handle,
+                  key,
+                  value,
+                });
+              } catch {
+                continue;
+              }
+            } else {
+              await params.runtime.setConfigOption({
+                handle: params.handle,
+                key,
+                value,
+              });
+            }
+          }
         }
       }
     },
