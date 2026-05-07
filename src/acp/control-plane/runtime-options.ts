@@ -313,29 +313,38 @@ export function buildRuntimeControlSignature(options: AcpSessionRuntimeOptions):
   });
 }
 
+export type ConfigOptionPriority = "essential" | "optional";
+
+export type ConfigOptionEntry = [key: string, value: string, priority: ConfigOptionPriority];
+
 export function buildRuntimeConfigOptionPairs(
   options: AcpSessionRuntimeOptions,
-): Array<[string, string]> {
+): Array<ConfigOptionEntry> {
   const normalized = normalizeRuntimeOptions(options);
-  const pairs = new Map<string, string>();
-  if (normalized.model) {
-    pairs.set("model", normalized.model);
-  }
-  if (normalized.thinking) {
-    pairs.set("thinking", normalized.thinking);
-  }
-  if (normalized.permissionProfile) {
-    pairs.set("approval_policy", normalized.permissionProfile);
-  }
-  if (typeof normalized.timeoutSeconds === "number") {
-    pairs.set("timeout", String(normalized.timeoutSeconds));
-  }
-  for (const [key, value] of Object.entries(normalized.backendExtras ?? {})) {
-    if (!pairs.has(key)) {
-      pairs.set(key, value);
+  const entries: ConfigOptionEntry[] = [];
+  const seen = new Set<string>();
+  function add(key: string, value: string, priority: ConfigOptionPriority): void {
+    if (!seen.has(key)) {
+      seen.add(key);
+      entries.push([key, value, priority]);
     }
   }
-  return [...pairs.entries()];
+  if (normalized.model) {
+    add("model", normalized.model, "essential");
+  }
+  if (normalized.thinking) {
+    add("thinking", normalized.thinking, "essential");
+  }
+  if (normalized.permissionProfile) {
+    add("approval_policy", normalized.permissionProfile, "essential");
+  }
+  if (typeof normalized.timeoutSeconds === "number") {
+    add("timeout", String(normalized.timeoutSeconds), "optional");
+  }
+  for (const [key, value] of Object.entries(normalized.backendExtras ?? {})) {
+    add(key, value, "optional");
+  }
+  return entries;
 }
 
 export function inferRuntimeOptionPatchFromConfigOption(
