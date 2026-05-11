@@ -222,6 +222,10 @@ export const mockedEnsureAuthProfileStore = vi.fn(() => ({}));
 export const mockedEnsureAuthProfileStoreWithoutExternalProfiles = vi.fn(() => ({}));
 export const mockedResolveAuthProfileOrder = vi.fn(() => [] as string[]);
 export const mockedShouldPreferExplicitConfigApiKeyAuth = vi.fn(() => false);
+export const mockedShouldSwitchToLiveModel = vi.fn(
+  (..._args: unknown[]): { provider: string; model: string } | null => null,
+);
+export const mockedClearLiveModelSwitchPending = vi.fn(async (..._args: unknown[]) => undefined);
 
 export const overflowBaseRunParams = {
   sessionId: "test-session",
@@ -398,6 +402,10 @@ export function resetRunOverflowCompactionHarnessMocks(): void {
   mockedShouldPreferExplicitConfigApiKeyAuth.mockReturnValue(false);
   mockedRunPostCompactionSideEffects.mockReset();
   mockedRunPostCompactionSideEffects.mockResolvedValue(undefined);
+  mockedShouldSwitchToLiveModel.mockReset();
+  mockedShouldSwitchToLiveModel.mockReturnValue(null);
+  mockedClearLiveModelSwitchPending.mockReset();
+  mockedClearLiveModelSwitchPending.mockResolvedValue(undefined);
 }
 
 export async function loadRunOverflowCompactionHarness(): Promise<{
@@ -516,6 +524,11 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
 
   vi.doMock("../models-config.js", () => ({
     ensureOpenClawModelsJson: vi.fn(async () => {}),
+  }));
+
+  vi.doMock("../live-model-switch.js", () => ({
+    shouldSwitchToLiveModel: mockedShouldSwitchToLiveModel,
+    clearLiveModelSwitchPending: mockedClearLiveModelSwitchPending,
   }));
 
   vi.doMock("../context-window-guard.js", () => ({

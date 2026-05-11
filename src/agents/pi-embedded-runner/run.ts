@@ -37,7 +37,8 @@ import {
   resolveSessionKeyForRequest,
   resolveStoredSessionKeyForSessionId,
 } from "../command/session.js";
-import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../defaults.js";
+import { resolveContextWindowInfo } from "../context-window-guard.js";
+import { DEFAULT_CONTEXT_TOKENS, DEFAULT_MODEL, DEFAULT_PROVIDER } from "../defaults.js";
 import { isStrictAgenticExecutionContractActive } from "../execution-contract.js";
 import {
   coerceToFailoverError,
@@ -1424,6 +1425,129 @@ export async function runEmbeddedPiAgent(
               sessionKey: resolvedSessionKey,
               agentId: params.agentId,
             });
+
+            // ── Pre-swap compaction guard ────────────────────────────────────
+            // When the live switch targets a model with a smaller context
+            // window than the current one, the existing transcript can exceed
+            // the new model's budget. Without a forced compaction here, the
+            // prompt assembler silently truncates the tool definitions on the
+            // first turn after the swap, causing the target model to emit
+            // pseudo tool calls as plain body text.
+            try {
+              const targetCtxInfo = resolveContextWindowInfo({
+                cfg: params.config,
+                provider: requestedSelection.provider,
+                modelId: requestedSelection.model,
+                defaultTokens: DEFAULT_CONTEXT_TOKENS,
+              });
+              const lastTurnPromptTokens = derivePromptTokens(lastRunPromptUsage);
+              const targetCtxKnown = targetCtxInfo.source !== "default";
+              const promptKnown = lastTurnPromptTokens != null && lastTurnPromptTokens > 0;
+              const exceedsTarget =
+                targetCtxKnown &&
+                promptKnown &&
+                (lastTurnPromptTokens as number) > targetCtxInfo.tokens;
+              if (exceedsTarget) {
+                const preSwapDiagId = createCompactionDiagId();
+                log.info(
+                  `[live-switch] pre-swap compaction required: ` +
+                    `lastPrompt=${lastTurnPromptTokens} > targetCtx=${targetCtxInfo.tokens} ` +
+                    `(${provider}/${modelId} -> ${requestedSelection.provider}/${requestedSelection.model}) ` +
+                    `diagId=${preSwapDiagId}`,
+                );
+                let preSwapCompactResult: Awaited<ReturnType<typeof contextEngine.compact>>;
+                await runOwnsCompactionBeforeHook("live switch pre-swap");
+                try {
+                  const preSwapRuntimeContext = {
+                    ...buildEmbeddedCompactionRuntimeContext({
+                      sessionKey: params.sessionKey,
+                      messageChannel: params.messageChannel,
+                      messageProvider: params.messageProvider,
+                      agentAccountId: params.agentAccountId,
+                      currentChannelId: params.currentChannelId,
+                      currentThreadTs: params.currentThreadTs,
+                      currentMessageId: params.currentMessageId,
+                      authProfileId: lastProfileId,
+                      workspaceDir: resolvedWorkspace,
+                      agentDir,
+                      config: params.config,
+                      skillsSnapshot: params.skillsSnapshot,
+                      senderIsOwner: params.senderIsOwner,
+                      senderId: params.senderId,
+                      provider: requestedSelection.provider,
+                      modelId: requestedSelection.model,
+                      modelFallbacksOverride: params.modelFallbacksOverride,
+                      thinkLevel,
+                      reasoningLevel: params.reasoningLevel,
+                      bashElevated: params.bashElevated,
+                      extraSystemPrompt: params.extraSystemPrompt,
+                      sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
+                      ownerNumbers: params.ownerNumbers,
+                    }),
+                    onCompactionHookMessages,
+                    ...(attempt.promptCache ? { promptCache: attempt.promptCache } : {}),
+                    runId: params.runId,
+                    trigger: "live_switch_pre_swap",
+                    diagId: preSwapDiagId,
+                  };
+                  preSwapCompactResult = await contextEngine.compact({
+                    sessionId: activeSessionId,
+                    sessionKey: params.sessionKey,
+                    sessionFile: activeSessionFile,
+                    tokenBudget: targetCtxInfo.tokens,
+                    force: true,
+                    compactionTarget: "budget",
+                    runtimeContext: preSwapRuntimeContext,
+                  });
+                } catch (compactErr) {
+                  log.warn(
+                    `[live-switch] pre-swap compaction threw; proceeding with swap anyway ` +
+                      `(target=${requestedSelection.provider}/${requestedSelection.model}): ${String(compactErr)}`,
+                  );
+                  preSwapCompactResult = {
+                    ok: false,
+                    compacted: false,
+                    reason: String(compactErr),
+                  };
+                }
+                if (preSwapCompactResult.compacted) {
+                  adoptCompactionTranscript(preSwapCompactResult);
+                }
+                await runOwnsCompactionAfterHook("live switch pre-swap", preSwapCompactResult);
+                if (preSwapCompactResult.compacted) {
+                  autoCompactionCount += 1;
+                  if (
+                    typeof preSwapCompactResult.result?.tokensAfter === "number" &&
+                    Number.isFinite(preSwapCompactResult.result.tokensAfter) &&
+                    preSwapCompactResult.result.tokensAfter > 0
+                  ) {
+                    lastCompactionTokensAfter = Math.floor(preSwapCompactResult.result.tokensAfter);
+                  }
+                  if (contextEngine.info.ownsCompaction === true) {
+                    await runPostCompactionSideEffects({
+                      config: params.config,
+                      sessionKey: params.sessionKey,
+                      sessionFile: activeSessionFile,
+                    });
+                  }
+                  log.info(
+                    `[live-switch] pre-swap compaction succeeded; proceeding with swap to ` +
+                      `${requestedSelection.provider}/${requestedSelection.model}`,
+                  );
+                  postCompactionGuard.armPostCompaction();
+                } else {
+                  log.warn(
+                    `[live-switch] pre-swap compaction did not reduce context ` +
+                      `(reason=${preSwapCompactResult.reason ?? "unknown"}); proceeding with swap anyway`,
+                  );
+                }
+              }
+            } catch (guardErr) {
+              log.warn(
+                `[live-switch] pre-swap compaction guard failed; proceeding with swap: ${String(guardErr)}`,
+              );
+            }
+
             log.info(
               `live session model switch requested during active attempt for ${params.sessionId}: ${provider}/${modelId} -> ${requestedSelection.provider}/${requestedSelection.model}`,
             );
