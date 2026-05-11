@@ -35,7 +35,7 @@ describe("issue triage hook endpoint", () => {
     readJsonBodyMock.mockReset();
   });
 
-  test("POST /hooks/issue-triage invokes service and returns result", async () => {
+  test("POST /hooks/triage-decision invokes service and returns result", async () => {
     readJsonBodyMock.mockResolvedValue({ ok: true, value: payload() });
     const issueTriageService = {
       classifyIssue: vi.fn(async () => "delegate"),
@@ -45,7 +45,7 @@ describe("issue triage hook endpoint", () => {
     const handler = createHooksHandler({ issueTriageService });
     const { res, getBody } = createResponse();
 
-    const handled = await handler(createHookRequest({ url: "/hooks/issue-triage" }), res);
+    const handled = await handler(createHookRequest({ url: "/hooks/triage-decision" }), res);
 
     expect(handled).toBe(true);
     expect(res.statusCode).toBe(200);
@@ -67,7 +67,7 @@ describe("issue triage hook endpoint", () => {
     const handler = createHooksHandler({});
     const { res, getBody } = createResponse();
 
-    const handled = await handler(createHookRequest({ url: "/hooks/issue-triage" }), res);
+    const handled = await handler(createHookRequest({ url: "/hooks/triage-decision" }), res);
 
     expect(handled).toBe(true);
     expect(res.statusCode).toBe(503);
@@ -88,7 +88,7 @@ describe("issue triage hook endpoint", () => {
     });
     const { res, getBody } = createResponse();
 
-    const handled = await handler(createHookRequest({ url: "/hooks/issue-triage" }), res);
+    const handled = await handler(createHookRequest({ url: "/hooks/triage-decision" }), res);
 
     expect(handled).toBe(true);
     expect(res.statusCode).toBe(400);

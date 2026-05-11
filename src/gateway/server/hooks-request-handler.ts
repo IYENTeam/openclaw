@@ -279,7 +279,7 @@ export function createHooksRequestHandler(
     });
     const now = Date.now();
 
-    if (subPath === "issue-triage") {
+    if (subPath === "triage-decision") {
       if (!issueTriageService) {
         sendJson(res, 503, { ok: false, error: "issue triage service is not configured" });
         return true;

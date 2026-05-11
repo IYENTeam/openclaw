@@ -67,7 +67,7 @@ export type HooksGmailConfig = {
 };
 
 export type HooksIssueTriageConfig = {
-  /** Enable the dedicated `/hooks/issue-triage` GitHub issue triage handler. */
+  /** Enable the dedicated `/hooks/triage-decision` GitHub issue triage handler. */
   enabled?: boolean;
   /** Environment variable containing the GitHub PAT/installation token. Default: OPENCLAW_ISSUE_TRIAGE_GITHUB_TOKEN, then GITHUB_TOKEN. */
   githubTokenEnv?: string;
