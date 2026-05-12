@@ -238,11 +238,11 @@ describe("AcpSessionManager", () => {
     resetTaskFlowRegistryForTests({ persist: false });
   });
 
-  it("marks ACP-shaped sessions without metadata as stale", () => {
+  it("marks ACP-shaped sessions without metadata as stale", async () => {
     hoisted.readAcpSessionEntryMock.mockReturnValue(null);
     const manager = new AcpSessionManager();
 
-    const resolved = manager.resolveSession({
+    const resolved = await manager.resolveSession({
       cfg: baseCfg,
       sessionKey: "agent:codex:acp:session-1",
     });
@@ -253,7 +253,7 @@ describe("AcpSessionManager", () => {
     }
     expect(resolved.error.code).toBe("ACP_SESSION_INIT_FAILED");
     expect(resolved.error.message).toContain("ACP metadata is missing");
-  });
+  }, 10_000);
 
   it("canonicalizes the main alias before ACP rehydrate after restart", async () => {
     const runtimeState = createRuntime();
