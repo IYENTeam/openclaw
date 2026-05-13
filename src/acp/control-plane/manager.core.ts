@@ -207,6 +207,7 @@ export class AcpSessionManager {
         const retryEntry = this.deps.readSessionEntry({
           cfg: params.cfg,
           sessionKey,
+          skipCache: true,
         });
         const retryAcp = retryEntry?.acp;
         if (retryAcp) {
