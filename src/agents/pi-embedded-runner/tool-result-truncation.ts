@@ -52,6 +52,15 @@ export const HARD_MAX_TOOL_RESULT_CHARS = DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS;
 const MIN_KEEP_CHARS = 2_000;
 const RECOVERY_MIN_KEEP_CHARS = 0;
 
+const INLINE_BASE64_DATA_URL_RE = /data:([a-z0-9.+-]+\/[a-z0-9.+-]+);base64,([a-z0-9+/=\r\n]+)/gi;
+
+export function redactInlineBase64DataUrls(text: string): string {
+  return text.replace(INLINE_BASE64_DATA_URL_RE, (_match, mime: string, data: string) => {
+    const chars = data.replace(/[\r\n]/g, "").length;
+    return `data:${mime};base64,<redacted chars=${chars}>`;
+  });
+}
+
 type ToolResultTruncationOptions = {
   suffix?: string | ((truncatedChars: number) => string);
   minKeepChars?: number;
@@ -141,6 +150,7 @@ export function truncateToolResultText(
   maxChars: number,
   options: ToolResultTruncationOptions = {},
 ): string {
+  text = redactInlineBase64DataUrls(text);
   const suffixFactory = resolveSuffixFactory(options.suffix);
   const minKeepChars = resolveEffectiveMinKeepChars({
     maxChars,
