@@ -21,6 +21,7 @@ let estimateToolResultReductionPotential: typeof import("./tool-result-truncatio
 let DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS: typeof import("./tool-result-truncation.js").DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS;
 let HARD_MAX_TOOL_RESULT_CHARS: typeof import("./tool-result-truncation.js").HARD_MAX_TOOL_RESULT_CHARS;
 let resolveLiveToolResultMaxChars: typeof import("./tool-result-truncation.js").resolveLiveToolResultMaxChars;
+let redactInlineBase64DataUrls: typeof import("./tool-result-truncation.js").redactInlineBase64DataUrls;
 let tmpDir: string | undefined;
 
 async function loadFreshToolResultTruncationModuleForTest() {
@@ -38,6 +39,7 @@ async function loadFreshToolResultTruncationModuleForTest() {
     DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS,
     HARD_MAX_TOOL_RESULT_CHARS,
     resolveLiveToolResultMaxChars,
+    redactInlineBase64DataUrls,
   } = await import("./tool-result-truncation.js"));
 }
 
@@ -101,6 +103,21 @@ describe("truncateToolResultText", () => {
   it("returns text unchanged when under limit", () => {
     const text = "hello world";
     expect(truncateToolResultText(text, 1000)).toBe(text);
+  });
+
+  it("redacts inline base64 data URLs before applying length limits", () => {
+    const text = "prefix data:image/png;base64," + "a".repeat(20_000) + " suffix";
+
+    const result = truncateToolResultText(text, 5_000);
+
+    expect(result).toBe("prefix data:image/png;base64,<redacted chars=20000> suffix");
+    expect(result).not.toContain("a".repeat(100));
+  });
+
+  it("redacts inline base64 data URLs with folded lines", () => {
+    expect(redactInlineBase64DataUrls("data:image/png;base64,aaaa\nbbbb")).toBe(
+      "data:image/png;base64,<redacted chars=8>",
+    );
   });
 
   it("truncates text that exceeds limit", () => {
