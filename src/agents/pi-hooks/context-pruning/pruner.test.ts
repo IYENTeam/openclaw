@@ -470,4 +470,31 @@ describe("pruneContextMessages", () => {
     const toolResult = result[1] as Extract<AgentMessage, { role: "toolResult" }>;
     expect(toolResult.content).toEqual([{ type: "text", text: placeholder }]);
   });
+  it("omits old tool results instead of preserving broken head/tail fragments when soft trim is zeroed", () => {
+    const placeholder = "[tool result omitted]";
+    const messages: AgentMessage[] = [
+      makeUser("diagnose this"),
+      makeToolResult([{ type: "text", text: `START ${"X".repeat(2_000)} END` }]),
+      makeAssistant([{ type: "text", text: "done" }]),
+    ];
+
+    const result = pruneContextMessages({
+      messages,
+      settings: {
+        ...DEFAULT_CONTEXT_PRUNING_SETTINGS,
+        keepLastAssistants: 1,
+        softTrimRatio: 0,
+        hardClearRatio: 1,
+        minPrunableToolChars: 1,
+        softTrim: { maxChars: 0, headChars: 0, tailChars: 0 },
+        hardClear: { enabled: true, placeholder },
+      },
+      ctx: CONTEXT_WINDOW_1M,
+      isToolPrunable: () => true,
+      contextWindowTokensOverride: 16,
+    });
+
+    const toolResult = result[1] as Extract<AgentMessage, { role: "toolResult" }>;
+    expect(toolResult.content).toEqual([{ type: "text", text: placeholder }]);
+  });
 });

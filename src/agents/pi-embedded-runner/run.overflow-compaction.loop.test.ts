@@ -224,7 +224,7 @@ describe("overflow compaction in run loop", () => {
     expect(mockedLog.warn).toHaveBeenCalledWith(expect.stringContaining("auto-compaction failed"));
   });
 
-  it("falls back to tool-result truncation and retries when oversized results are detected", async () => {
+  it("truncates oversized tool results before spending an overflow compaction attempt", async () => {
     queueOverflowAttemptWithOversizedToolOutput(mockedRunEmbeddedAttempt, makeOverflowError());
     mockedRunEmbeddedAttempt.mockResolvedValueOnce(makeAttemptResult({ promptError: null }));
 
@@ -241,7 +241,7 @@ describe("overflow compaction in run loop", () => {
 
     const result = await runEmbeddedPiAgent(baseParams);
 
-    expect(mockedCompactDirect).toHaveBeenCalledTimes(1);
+    expect(mockedCompactDirect).not.toHaveBeenCalled();
     expect(mockedSessionLikelyHasOversizedToolResults).toHaveBeenCalledWith(
       expect.objectContaining({ contextWindowTokens: 200000 }),
     );
@@ -255,7 +255,7 @@ describe("overflow compaction in run loop", () => {
     expect(result.meta.error).toBeUndefined();
   });
 
-  it("retries after fallback truncation for a mixed oversized-plus-aggregate tool tail", async () => {
+  it("retries after early truncation for a mixed oversized-plus-aggregate tool tail", async () => {
     mockedRunEmbeddedAttempt
       .mockResolvedValueOnce(
         makeAttemptResult({
@@ -291,7 +291,7 @@ describe("overflow compaction in run loop", () => {
 
     const result = await runEmbeddedPiAgent(baseParams);
 
-    expect(mockedCompactDirect).toHaveBeenCalledTimes(1);
+    expect(mockedCompactDirect).not.toHaveBeenCalled();
     expect(mockedSessionLikelyHasOversizedToolResults).toHaveBeenCalledWith(
       expect.objectContaining({
         messages: expect.arrayContaining([

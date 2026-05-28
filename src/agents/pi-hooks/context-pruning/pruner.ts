@@ -255,6 +255,13 @@ function softTrimToolResultMessage(params: {
     ? collectPrunableToolResultSegments(msg.content)
     : collectTextSegments(msg.content);
   const rawLen = estimateJoinedTextLength(parts);
+  const omitInsteadOfFragment =
+    settings.softTrim.maxChars === 0 &&
+    settings.softTrim.headChars === 0 &&
+    settings.softTrim.tailChars === 0;
+  if (omitInsteadOfFragment && settings.hardClear.enabled) {
+    return { ...msg, content: [asText(settings.hardClear.placeholder)] };
+  }
   if (rawLen <= settings.softTrim.maxChars) {
     if (!hasImages) {
       return null;

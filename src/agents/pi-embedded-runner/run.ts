@@ -1701,6 +1701,60 @@ export async function runEmbeddedPiAgent(
             );
             const isCompactionFailure = isCompactionFailureError(errorText);
             const hadAttemptLevelCompaction = attemptCompactionCount > 0;
+            const tryToolResultTruncationRecovery = async (): Promise<boolean> => {
+              if (toolResultTruncationAttempted) {
+                return false;
+              }
+              const contextWindowTokens = ctxInfo.tokens;
+              const toolResultMaxChars = resolveLiveToolResultMaxChars({
+                contextWindowTokens,
+                cfg: params.config,
+                agentId: sessionAgentId,
+              });
+              const hasOversized = attempt.messagesSnapshot
+                ? sessionLikelyHasOversizedToolResults({
+                    messages: attempt.messagesSnapshot,
+                    contextWindowTokens,
+                    maxCharsOverride: toolResultMaxChars,
+                  })
+                : false;
+
+              if (!hasOversized) {
+                return false;
+              }
+              toolResultTruncationAttempted = true;
+              log.warn(
+                `[context-overflow-recovery] Attempting tool result truncation for ${provider}/${modelId} ` +
+                  `(contextWindow=${contextWindowTokens} tokens)`,
+              );
+              const truncResult = await truncateOversizedToolResultsInSession({
+                sessionFile: activeSessionFile,
+                contextWindowTokens,
+                maxCharsOverride: toolResultMaxChars,
+                sessionId: activeSessionId,
+                sessionKey: params.sessionKey,
+                config: params.config,
+              });
+              if (truncResult.truncated) {
+                log.info(
+                  `[context-overflow-recovery] Truncated ${truncResult.truncatedCount} tool result(s); retrying prompt`,
+                );
+                if (preflightRecovery?.source === "mid-turn") {
+                  continueFromCurrentTranscript();
+                }
+                return true;
+              }
+              log.warn(
+                `[context-overflow-recovery] Tool result truncation did not help: ${truncResult.reason ?? "unknown"}`,
+              );
+              return false;
+            };
+            // Hermes-agent prunes/persists large raw tool payloads before it asks
+            // the summarizer to compact history. Mirror that ordering here so an
+            // oversized tool tail does not consume every overflow compaction retry.
+            if (!isCompactionFailure && (await tryToolResultTruncationRecovery())) {
+              continue;
+            }
             // If this attempt already compacted (SDK auto-compaction), avoid immediately
             // running another explicit compaction for the same overflow trigger.
             if (
@@ -1863,49 +1917,6 @@ export async function runEmbeddedPiAgent(
               log.warn(
                 `auto-compaction failed for ${provider}/${modelId}: ${compactResult.reason ?? "nothing to compact"}`,
               );
-            }
-            if (!toolResultTruncationAttempted) {
-              const contextWindowTokens = ctxInfo.tokens;
-              const toolResultMaxChars = resolveLiveToolResultMaxChars({
-                contextWindowTokens,
-                cfg: params.config,
-                agentId: sessionAgentId,
-              });
-              const hasOversized = attempt.messagesSnapshot
-                ? sessionLikelyHasOversizedToolResults({
-                    messages: attempt.messagesSnapshot,
-                    contextWindowTokens,
-                    maxCharsOverride: toolResultMaxChars,
-                  })
-                : false;
-
-              if (hasOversized) {
-                toolResultTruncationAttempted = true;
-                log.warn(
-                  `[context-overflow-recovery] Attempting tool result truncation for ${provider}/${modelId} ` +
-                    `(contextWindow=${contextWindowTokens} tokens)`,
-                );
-                const truncResult = await truncateOversizedToolResultsInSession({
-                  sessionFile: activeSessionFile,
-                  contextWindowTokens,
-                  maxCharsOverride: toolResultMaxChars,
-                  sessionId: activeSessionId,
-                  sessionKey: params.sessionKey,
-                  config: params.config,
-                });
-                if (truncResult.truncated) {
-                  log.info(
-                    `[context-overflow-recovery] Truncated ${truncResult.truncatedCount} tool result(s); retrying prompt`,
-                  );
-                  if (preflightRecovery?.source === "mid-turn") {
-                    continueFromCurrentTranscript();
-                  }
-                  continue;
-                }
-                log.warn(
-                  `[context-overflow-recovery] Tool result truncation did not help: ${truncResult.reason ?? "unknown"}`,
-                );
-              }
             }
             if (
               (isCompactionFailure ||
