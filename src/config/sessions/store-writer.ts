@@ -1,3 +1,4 @@
+import { withSessionStoreFileLock } from "./store-file-lock.js";
 import {
   WRITER_QUEUES,
   type SessionStoreWriterQueue,
@@ -43,7 +44,7 @@ async function drainSessionStoreWriterQueue(storePath: string): Promise<void> {
         let failed: unknown;
         let hasFailure = false;
         try {
-          result = await task.fn();
+          result = await withSessionStoreFileLock(storePath, task.fn);
         } catch (err) {
           hasFailure = true;
           failed = err;
