@@ -15,7 +15,7 @@ OpenClaw session data remains file-backed. This model makes ownership explicit s
 
 - **Identity** is the stable key and routing identity for a session: agent id, channel/user/group references, labels, and thread parentage.
 - **Durable state** is the authoritative persisted data needed after restart: transcript references, user-selected model/auth/runtime overrides, lineage, plugin extension state, ACP metadata, and explicit lifecycle history.
-- **Derived projection** is display or diagnostic data computed from durable state, transcript manifests, runtime registries, or gateway context. Minimal/default projections must not require heavy transcript scans.
+- **Derived projection** is display or diagnostic data computed from durable state, transcript manifests, runtime registries, or gateway context. Minimal and display projections must not require heavy transcript scans.
 - **Runtime/ephemeral state** is active-run evidence that must be reconciled against live runtime registries before it is treated as authoritative. Persisted `status: running` is a recovery hint, not proof of a live run.
 
 ## Non-goals
@@ -44,8 +44,8 @@ OpenClaw session data remains file-backed. This model makes ownership explicit s
 
 ## Projection tiers
 
-- **Minimal**: session key, session id, update time, identity kind, agent id. This is the default hot path and excludes transcript preview, plugin extension payloads, ACP metadata, and diagnostics.
-- **Display**: minimal plus labels, channel display fields, status, and last interaction time.
+- **Minimal**: session key, session id, update time, identity kind, agent id. It excludes transcript preview, plugin extension payloads, ACP metadata, and diagnostics.
+- **Display**: minimal plus labels, channel display fields, status, and last interaction time. This is the Gateway list-view hot path when transcript previews are not requested.
 - **Details**: display plus transcript reference, parentage, selected runtime/auth/model overrides, and usage totals.
 - **Diagnostic**: details plus plugin/ACP/debug/heartbeat/compaction/system-prompt diagnostics.
 

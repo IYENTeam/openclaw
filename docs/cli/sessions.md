@@ -158,6 +158,36 @@ Related:
 
 - Session config: [Configuration reference](/gateway/config-agents#session)
 
+## Session state upgrade and recovery notes
+
+OpenClaw keeps session state file-backed during the session architecture upgrade. Existing `sessions.json` rows stay readable, and load-time compatibility normalization is an in-memory view until a normal write path saves the store. Unknown plugin, ACP, and future fields are preserved so older backups remain useful for rollback.
+
+Before risky maintenance, create a backup and prefer dry-run commands:
+
+```bash
+openclaw backup create
+openclaw sessions cleanup --dry-run --json
+openclaw sessions cleanup --all-agents --dry-run --json
+```
+
+Rollback expectation: you can restore a previous state backup or keep an older `sessions.json` copy. Newer OpenClaw may understand additional projection, manifest, transaction, or reconciliation metadata; older versions should ignore unknown fields instead of requiring manual edits. Do not delete a session store as first-line recovery. If a store is corrupt, copy it aside first, run dry-run diagnostics where possible, then repair through `openclaw doctor` or `openclaw sessions cleanup --dry-run` before using `--enforce`.
+
+Gateway `sessions.list` supports projection tiers for operators and clients:
+
+- `minimal`: key, id, update time, kind, and model basics for automation that only needs identifiers.
+- `display`: bounded table rows for Control UI and other list views. This is the Gateway hot path when no transcript preview is requested.
+- `details`: compatibility-oriented enrichment with transcript-derived titles/previews, usage fallback, child-session context, and richer model display.
+- `diagnostic`: reserved for detail-level diagnostics and verbose tooling.
+
+Transcript manifests, projection indexes, transaction markers, and reconciliation reports are compatibility helpers. They should explain what OpenClaw saw and what it would repair; they should not require irreversible migration. Pending transaction markers indicate an interrupted store mutation. Re-run the relevant command or use dry-run cleanup/doctor output to confirm the safe action before enforcing changes.
+
+Troubleshooting examples:
+
+- Stale store lock: wait for active Gateway or CLI commands to finish. If a lock timeout persists after the owning process is gone, run `openclaw doctor` or restart the Gateway so stale-lock cleanup can reclaim dead PID locks. Do not remove lock files while an OpenClaw process is still writing.
+- Stale running session: treat persisted `status: running` as a restart hint. Check Gateway status and session details; reconciliation should downgrade interrupted runs rather than trusting the flat field alone.
+- Corrupt manifest or projection index: rebuild through the owning repair/reconciliation command when available. Keep the original transcript and store backup until the rebuilt manifest is verified.
+- Missing transcript reference: use `openclaw sessions cleanup --dry-run --fix-missing` to preview the effect. Only add `--enforce` after the preview matches the intended rows.
+
 ## Related
 
 - [CLI reference](/cli)
