@@ -4,3 +4,6 @@ export * from "./projection.js";
 export * from "./retention.js";
 export * from "./runtime-boundary.js";
 export * from "./state.js";
+export * from "./manifest.js";
+export * from "./mutation.js";
+export * from "./reconciliation.js";
