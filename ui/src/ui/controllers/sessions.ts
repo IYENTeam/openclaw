@@ -32,6 +32,7 @@ export type SessionsState = {
 };
 
 type LoadSessionsOverrides = {
+  projectionTier?: "minimal" | "display" | "details" | "diagnostic";
   activeMinutes?: number;
   limit?: number;
   includeGlobal?: boolean;
@@ -430,6 +431,7 @@ async function loadSessionsOnce(
     const limit = overrides?.limit ?? toNumber(state.sessionsFilterLimit, 0);
     const configuredAgentsOnly = overrides?.configuredAgentsOnly ?? true;
     const params: Record<string, unknown> = {
+      projectionTier: overrides?.projectionTier ?? "display",
       includeGlobal,
       includeUnknown,
       configuredAgentsOnly,

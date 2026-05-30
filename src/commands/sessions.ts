@@ -3,10 +3,10 @@ import { DEFAULT_CONTEXT_TOKENS } from "../agents/defaults.js";
 import { selectAgentHarness } from "../agents/harness/selection.js";
 import { getRuntimeConfig } from "../config/config.js";
 import { loadSessionStore, resolveSessionTotalTokens } from "../config/sessions.js";
+import { describeSessionIdentity } from "../config/sessions/domain/index.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { info } from "../globals.js";
-import { parseAgentSessionKey } from "../routing/session-key.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../runtime.js";
 import { isCronSessionKey } from "../sessions/session-key-utils.js";
 import { createLazyImportLoader } from "../shared/lazy-promise.js";
@@ -289,7 +289,8 @@ export async function sessionsCommand(
       })
       .map(([key, entry]) => {
         const row = toSessionDisplayRow(key, entry);
-        const agentId = parseAgentSessionKey(row.key)?.agentId ?? target.agentId;
+        const identity = describeSessionIdentity(row.key);
+        const agentId = identity.shape === "agent" ? identity.agentId : target.agentId;
         const modelRef = resolveSessionDisplayModelRef(cfg, row);
         const agentRuntime = resolveAgentRuntimeMetadata(cfg, agentId);
         return Object.assign({}, row, {

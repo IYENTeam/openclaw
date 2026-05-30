@@ -1537,6 +1537,21 @@ export function resolveSessionDisplayModelIdentityRef(params: {
   };
 }
 
+type SessionListProjectionTier = NonNullable<
+  import("./protocol/index.js").SessionsListParams["projectionTier"]
+>;
+
+function resolveSessionListProjectionTier(
+  opts: import("./protocol/index.js").SessionsListParams,
+): SessionListProjectionTier {
+  const tier = opts.projectionTier;
+  return tier === "minimal" || tier === "display" || tier === "diagnostic" ? tier : "details";
+}
+
+function shouldHydrateFullSessionListRow(tier: SessionListProjectionTier): boolean {
+  return tier === "details" || tier === "diagnostic";
+}
+
 export function buildGatewaySessionRow(params: {
   cfg: OpenClawConfig;
   storePath: string;
@@ -2091,7 +2106,10 @@ export function listSessionsFromStore(params: {
   };
   const includeDerivedTitles = opts.includeDerivedTitles === true;
   const includeLastMessage = opts.includeLastMessage === true;
+  const projectionTier = resolveSessionListProjectionTier(opts);
+  const hydrateFullRows = shouldHydrateFullSessionListRow(projectionTier);
   const hasSpawnedByFilter = typeof opts.spawnedBy === "string" && opts.spawnedBy.length > 0;
+  const needsRowContext = hydrateFullRows || hasSpawnedByFilter;
 
   const selection = selectSessionEntries({
     store,
@@ -2104,6 +2122,7 @@ export function listSessionsFromStore(params: {
 
   const sessions = entries.map(([key, entry], index) => {
     const includeTranscriptFields = index < sessionListTranscriptFieldRows;
+    const rowContextForList = needsRowContext ? getRowContext() : undefined;
     return buildGatewaySessionRow({
       cfg,
       storePath,
@@ -2112,11 +2131,13 @@ export function listSessionsFromStore(params: {
       entry,
       modelCatalog: params.modelCatalog,
       now,
-      includeDerivedTitles: includeTranscriptFields && includeDerivedTitles,
-      includeLastMessage: includeTranscriptFields && includeLastMessage,
+      includeDerivedTitles: hydrateFullRows && includeTranscriptFields && includeDerivedTitles,
+      includeLastMessage: hydrateFullRows && includeTranscriptFields && includeLastMessage,
       transcriptUsageMaxBytes: sessionListTranscriptUsageMaxBytes,
-      storeChildSessionsByKey: getRowContext().storeChildSessionsByKey,
-      rowContext: getRowContext(),
+      storeChildSessionsByKey: rowContextForList?.storeChildSessionsByKey,
+      rowContext: rowContextForList,
+      skipTranscriptUsageFallback: !hydrateFullRows,
+      lightweightListRow: !hydrateFullRows,
     });
   });
 
@@ -2160,7 +2181,10 @@ export async function listSessionsFromStoreAsync(params: {
   };
   const includeDerivedTitles = opts.includeDerivedTitles === true;
   const includeLastMessage = opts.includeLastMessage === true;
+  const projectionTier = resolveSessionListProjectionTier(opts);
+  const hydrateFullRows = shouldHydrateFullSessionListRow(projectionTier);
   const hasSpawnedByFilter = typeof opts.spawnedBy === "string" && opts.spawnedBy.length > 0;
+  const needsRowContext = hydrateFullRows || hasSpawnedByFilter;
 
   const selection = selectSessionEntries({
     store,
@@ -2175,6 +2199,7 @@ export async function listSessionsFromStoreAsync(params: {
   for (let i = 0; i < entries.length; i++) {
     const [key, entry] = entries[i];
     const includeTranscriptFields = i < sessionListTranscriptFieldRows;
+    const rowContextForList = needsRowContext ? getRowContext() : undefined;
     const row = buildGatewaySessionRow({
       cfg,
       storePath,
@@ -2186,20 +2211,22 @@ export async function listSessionsFromStoreAsync(params: {
       includeDerivedTitles: false,
       includeLastMessage: false,
       transcriptUsageMaxBytes: sessionListTranscriptUsageMaxBytes,
-      storeChildSessionsByKey: getRowContext().storeChildSessionsByKey,
-      rowContext: getRowContext(),
-      skipTranscriptUsageFallback: true,
-      lightweightListRow: true,
+      storeChildSessionsByKey: rowContextForList?.storeChildSessionsByKey,
+      rowContext: rowContextForList,
+      skipTranscriptUsageFallback: !hydrateFullRows,
+      lightweightListRow: !hydrateFullRows,
     });
     if (
+      hydrateFullRows &&
       entry?.sessionId &&
       includeTranscriptFields &&
       (includeDerivedTitles || includeLastMessage)
     ) {
-      const parsed = parseAgentSessionKey(key);
-      const sessionAgentId = parsed?.agentId
-        ? normalizeAgentId(parsed.agentId)
-        : resolveDefaultAgentId(cfg);
+      const identity = describeSessionIdentity(key);
+      const sessionAgentId =
+        identity.shape === "agent"
+          ? normalizeAgentId(identity.agentId)
+          : resolveDefaultAgentId(cfg);
       const fields = await readSessionTitleFieldsFromTranscriptAsync(
         entry.sessionId,
         storePath,

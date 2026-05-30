@@ -698,7 +698,14 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       storePath,
       store: listStore,
       modelCatalog,
-      opts: p,
+      opts: {
+        ...p,
+        projectionTier:
+          p.projectionTier ??
+          (p.includeDerivedTitles === true || p.includeLastMessage === true
+            ? "details"
+            : "display"),
+      },
     });
     respond(
       true,

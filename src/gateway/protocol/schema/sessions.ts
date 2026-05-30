@@ -36,6 +36,13 @@ export const SessionCompactionCheckpointSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const SessionListProjectionTierSchema = Type.Union([
+  Type.Literal("minimal"),
+  Type.Literal("display"),
+  Type.Literal("details"),
+  Type.Literal("diagnostic"),
+]);
+
 export const SessionsListParamsSchema = Type.Object(
   {
     /**
@@ -51,6 +58,12 @@ export const SessionsListParamsSchema = Type.Object(
      * Broad disk discovery remains the default for recovery/ACP consumers.
      */
     configuredAgentsOnly: Type.Optional(Type.Boolean()),
+    /**
+     * Controls how much per-row enrichment sessions.list performs.
+     * display is the default hot path for UI tables; details/diagnostic preserve
+     * heavier compatibility fields such as plugin extensions and transcript fallbacks.
+     */
+    projectionTier: Type.Optional(SessionListProjectionTierSchema),
     /**
      * Read first 8KB of each session transcript to derive title from first user message.
      * Performs a file read per session - use `limit` to bound result set on large stores.

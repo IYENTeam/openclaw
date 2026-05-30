@@ -37,7 +37,7 @@ function measureList(size: number): { count: number; durationMs: number; firstKe
     cfg,
     storePath: `/tmp/openclaw-session-list-baseline-${size}/sessions.json`,
     store,
-    opts: {},
+    opts: { limit: size, projectionTier: "display" },
   });
   const durationMs = performance.now() - started;
   return { count: result.count, durationMs, firstKey: result.sessions[0]?.key };

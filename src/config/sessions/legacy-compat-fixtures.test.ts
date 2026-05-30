@@ -147,7 +147,14 @@ describe("legacy session compatibility fixtures", () => {
 
       const loaded = loadSessionStore(storePath, {
         skipCache: true,
-        maintenanceConfig: { mode: "off", pruneAfterMs: 0, maxEntries: 1000 },
+        maintenanceConfig: {
+          mode: "warn",
+          pruneAfterMs: 0,
+          maxEntries: 1000,
+          resetArchiveRetentionMs: null,
+          maxDiskBytes: null,
+          highWaterBytes: null,
+        },
       });
 
       expect(Object.keys(loaded)).toHaveLength(9);
@@ -204,12 +211,12 @@ describe("legacy session compatibility fixtures", () => {
       await updateSessionStoreEntry({
         storePath,
         sessionKey: PLUGIN_KEY,
-        update: () => ({ label: "Plugin runtime" }),
+        update: async () => ({ label: "Plugin runtime" }),
       });
       await updateSessionStoreEntry({
         storePath,
         sessionKey: ACP_KEY,
-        update: () => ({ updatedAt: 99 }),
+        update: async () => ({ updatedAt: 99 }),
       });
 
       const loaded = loadSessionStore(storePath, { skipCache: true });
@@ -230,7 +237,7 @@ describe("legacy session compatibility fixtures", () => {
       await updateSessionStoreEntry({
         storePath,
         sessionKey: MISSING_TRANSCRIPT_KEY,
-        update: () => ({ label: "Missing transcript remains referenced" }),
+        update: async () => ({ label: "Missing transcript remains referenced" }),
       });
 
       const loaded = loadSessionStore(storePath, { skipCache: true });
