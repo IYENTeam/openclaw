@@ -9,6 +9,7 @@ import {
   updateSessionStore,
   updateSessionStoreEntry,
 } from "../sessions.js";
+import { applySessionStoreMigrations } from "./store-migrations.js";
 import type { SessionEntry } from "./types.js";
 
 const CANONICAL_CASE_KEY = "agent:main:webchat:direct:mixed-user";
@@ -249,6 +250,73 @@ describe("legacy session compatibility fixtures", () => {
       await expect(
         fs.stat(path.join(dir, "sessions", "missing-transcript.jsonl")),
       ).rejects.toThrow();
+    });
+  });
+  it("keeps store migrations idempotent and preserves unknown compatibility fields", () => {
+    const legacyEntry = {
+      sessionId: "legacy-migration",
+      updatedAt: 1,
+      provider: "slack",
+      lastProvider: "slack",
+      room: "legacy-room",
+      pluginExtensions: {
+        unknownPlugin: { state: { nested: true } },
+      },
+      acp: { sessionId: "acp-session", mode: "attached" },
+      futureDomainView: { version: 99, owner: "external" },
+    } as unknown as SessionEntry;
+    const store: Record<string, SessionEntry> = {
+      "agent:main:legacy:migration": legacyEntry,
+    };
+
+    expect(applySessionStoreMigrations(store)).toBe(true);
+    expect(applySessionStoreMigrations(store)).toBe(false);
+    expect(store["agent:main:legacy:migration"]).toMatchObject({
+      channel: "slack",
+      lastChannel: "slack",
+      groupChannel: "legacy-room",
+      pluginExtensions: {
+        unknownPlugin: { state: { nested: true } },
+      },
+      acp: { sessionId: "acp-session", mode: "attached" },
+      futureDomainView: { version: 99, owner: "external" },
+    });
+    expect(
+      "provider" in (store["agent:main:legacy:migration"] as unknown as Record<string, unknown>),
+    ).toBe(false);
+    expect(
+      "lastProvider" in
+        (store["agent:main:legacy:migration"] as unknown as Record<string, unknown>),
+    ).toBe(false);
+    expect(
+      "room" in (store["agent:main:legacy:migration"] as unknown as Record<string, unknown>),
+    ).toBe(false);
+  });
+
+  it("loads migration candidates without mutating disk until an explicit save path runs", async () => {
+    await withTempDir({ prefix: "openclaw-session-migration-dry-run-" }, async (dir) => {
+      const storePath = path.join(dir, "sessions.json");
+      const rawStore = {
+        "agent:main:legacy:dry-run": {
+          sessionId: "dry-run",
+          updatedAt: 1,
+          provider: "discord",
+          room: "general",
+          unknownCompatibilityBlock: { keep: ["yes"] },
+        },
+      };
+      const before = `${JSON.stringify(rawStore, null, 2)}\n`;
+      await fs.writeFile(storePath, before, "utf8");
+
+      const loaded = loadSessionStore(storePath, { skipCache: true });
+      const after = await fs.readFile(storePath, "utf8");
+
+      expect(loaded["agent:main:legacy:dry-run"]).toMatchObject({
+        channel: "discord",
+        groupChannel: "general",
+        unknownCompatibilityBlock: { keep: ["yes"] },
+      });
+      expect(after).toBe(before);
     });
   });
 });
