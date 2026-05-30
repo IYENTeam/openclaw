@@ -1,4 +1,4 @@
-import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import path from "node:path";
 import { withSessionStoreFileLock } from "./store-file-lock.js";
 import {
@@ -9,20 +9,23 @@ import {
 
 export async function withSessionStoreWriterForTest<T>(
   storePath: string,
-  fn: () => Promise<T>,
+  fn: (resolvedStorePath: string) => Promise<T>,
 ): Promise<T> {
   return await runExclusiveSessionStoreWrite(storePath, fn);
 }
 
-async function resolveSessionStoreWriterKey(storePath: string): Promise<string> {
+function resolveSessionStoreWriterKey(storePath: string): string {
   const resolved = path.resolve(storePath);
-  const realFile = await fs.realpath(resolved).catch(() => null);
-  if (realFile) {
-    return realFile;
+  try {
+    return fsSync.realpathSync.native(resolved);
+  } catch {
+    const dir = path.dirname(resolved);
+    try {
+      return path.join(fsSync.realpathSync.native(dir), path.basename(resolved));
+    } catch {
+      return resolved;
+    }
   }
-  const dir = path.dirname(resolved);
-  const realDir = await fs.realpath(dir).catch(() => dir);
-  return path.join(realDir, path.basename(resolved));
 }
 
 function getOrCreateWriterQueue(storePath: string): SessionStoreWriterQueue {
@@ -85,7 +88,7 @@ async function drainSessionStoreWriterQueue(storePath: string): Promise<void> {
 
 export async function runExclusiveSessionStoreWrite<T>(
   storePath: string,
-  fn: () => Promise<T>,
+  fn: (resolvedStorePath: string) => Promise<T>,
 ): Promise<T> {
   if (!storePath || typeof storePath !== "string") {
     throw new Error(
@@ -94,12 +97,12 @@ export async function runExclusiveSessionStoreWrite<T>(
       )}`,
     );
   }
-  const writerKey = await resolveSessionStoreWriterKey(storePath);
+  const writerKey = resolveSessionStoreWriterKey(storePath);
   const queue = getOrCreateWriterQueue(writerKey);
 
   const promise = new Promise<T>((resolve, reject) => {
     const task: SessionStoreWriterTask = {
-      fn: async () => await fn(),
+      fn: async () => await fn(writerKey),
       resolve: (value) => resolve(value as T),
       reject,
     };

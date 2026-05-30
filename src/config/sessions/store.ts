@@ -427,8 +427,8 @@ export async function saveSessionStore(
   store: Record<string, SessionEntry>,
   opts?: SaveSessionStoreOptions,
 ): Promise<void> {
-  await runExclusiveSessionStoreWrite(storePath, async () => {
-    await saveSessionStoreUnlocked(storePath, store, opts);
+  await runExclusiveSessionStoreWrite(storePath, async (resolvedStorePath) => {
+    await saveSessionStoreUnlocked(resolvedStorePath, store, opts);
   });
 }
 
@@ -437,8 +437,8 @@ export async function updateSessionStore<T>(
   mutator: (store: Record<string, SessionEntry>) => Promise<T> | T,
   opts?: SaveSessionStoreOptions,
 ): Promise<T> {
-  return await runExclusiveSessionStoreWrite(storePath, async () => {
-    const store = loadMutableSessionStoreForWriter(storePath);
+  return await runExclusiveSessionStoreWrite(storePath, async (resolvedStorePath) => {
+    const store = loadMutableSessionStoreForWriter(resolvedStorePath);
     const previousAcpByKey = collectAcpMetadataSnapshot(store);
     const result = await mutator(store);
     preserveExistingAcpMetadata({
@@ -446,7 +446,7 @@ export async function updateSessionStore<T>(
       nextStore: store,
       allowDropSessionKeys: opts?.allowDropAcpMetaSessionKeys,
     });
-    await saveSessionStoreUnlocked(storePath, store, opts);
+    await saveSessionStoreUnlocked(resolvedStorePath, store, opts);
     return result;
   });
 }
@@ -529,8 +529,8 @@ export async function updateSessionStoreEntry(params: {
   update: (entry: SessionEntry) => Promise<Partial<SessionEntry> | null>;
 }): Promise<SessionEntry | null> {
   const { storePath, sessionKey, update } = params;
-  return await runExclusiveSessionStoreWrite(storePath, async () => {
-    const store = loadMutableSessionStoreForWriter(storePath);
+  return await runExclusiveSessionStoreWrite(storePath, async (resolvedStorePath) => {
+    const store = loadMutableSessionStoreForWriter(resolvedStorePath);
     const resolved = resolveSessionStoreEntry({ store, sessionKey });
     const existing = resolved.existing;
     if (!existing) {
@@ -542,7 +542,7 @@ export async function updateSessionStoreEntry(params: {
     }
     const next = mergeSessionEntry(existing, patch);
     return await persistResolvedSessionEntry({
-      storePath,
+      storePath: resolvedStorePath,
       store,
       resolved,
       next,
@@ -611,8 +611,8 @@ export async function updateLastRoute(params: {
 }): Promise<SessionEntry | null> {
   const { storePath, sessionKey, channel, to, accountId, threadId, ctx } = params;
   const createIfMissing = params.createIfMissing ?? true;
-  return await runExclusiveSessionStoreWrite(storePath, async () => {
-    const store = loadMutableSessionStoreForWriter(storePath);
+  return await runExclusiveSessionStoreWrite(storePath, async (resolvedStorePath) => {
+    const store = loadMutableSessionStoreForWriter(resolvedStorePath);
     const resolved = resolveSessionStoreEntry({ store, sessionKey });
     const existing = resolved.existing;
     if (!existing && !createIfMissing) {
@@ -676,7 +676,7 @@ export async function updateLastRoute(params: {
       metaPatch ? { ...basePatch, ...metaPatch } : basePatch,
     );
     return await persistResolvedSessionEntry({
-      storePath,
+      storePath: resolvedStorePath,
       store,
       resolved,
       next,

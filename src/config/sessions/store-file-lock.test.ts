@@ -222,7 +222,7 @@ describe("session store file lock", () => {
         sessionKey: "agent:main:main",
         update: async () => {
           order.push("second-start");
-          return { updatedAt: 2 };
+          return { displayName: "second" };
         },
       });
       await new Promise((resolve) => setTimeout(resolve, 25));
@@ -232,8 +232,14 @@ describe("session store file lock", () => {
 
       expect(order).toEqual(["first-start", "first-end", "second-start"]);
       const store = await readStore(storePath);
-      expect(store["agent:main:main"]).toMatchObject({ label: "first" });
-      expect(store["agent:main:main"]?.updatedAt).toBeGreaterThanOrEqual(2);
+      expect(store["agent:main:main"]).toMatchObject({
+        label: "first",
+        displayName: "second",
+      });
+      await expect(fs.lstat(aliasStorePath)).resolves.toMatchObject({
+        isSymbolicLink: expect.any(Function),
+      });
+      expect((await fs.lstat(aliasStorePath)).isSymbolicLink()).toBe(true);
     } finally {
       await fs.unlink(aliasStorePath).catch(() => undefined);
       await fs
