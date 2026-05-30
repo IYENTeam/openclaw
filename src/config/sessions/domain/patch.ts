@@ -1,4 +1,4 @@
-import type { SessionEntry } from "../types.js";
+import type { SessionEntry, SessionPluginJsonValue } from "../types.js";
 import {
   mergeSessionDomainState,
   SESSION_DOMAIN_KEYS,
@@ -56,3 +56,33 @@ export const patchSessionExtensions = (
   entry: SessionEntry,
   patch: Partial<SessionDomainState["extensions"]>,
 ): SessionEntry => patchSessionDomain(entry, "extensions", patch);
+
+function assertPluginExtensionKey(value: string, label: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`${label} must be non-empty`);
+  }
+  if (trimmed === "__proto__" || trimmed === "constructor" || trimmed === "prototype") {
+    throw new Error(`${label} is reserved`);
+  }
+  return trimmed;
+}
+
+export function patchSessionPluginExtension(params: {
+  entry: SessionEntry;
+  pluginId: string;
+  namespace: string;
+  value: SessionPluginJsonValue;
+}): SessionEntry {
+  const pluginId = assertPluginExtensionKey(params.pluginId, "pluginId");
+  const namespace = assertPluginExtensionKey(params.namespace, "namespace");
+  return patchSessionExtensions(params.entry, {
+    pluginExtensions: {
+      ...params.entry.pluginExtensions,
+      [pluginId]: {
+        ...params.entry.pluginExtensions?.[pluginId],
+        [namespace]: params.value,
+      },
+    },
+  });
+}

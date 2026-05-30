@@ -5,6 +5,7 @@ import {
   patchSessionDomain,
   patchSessionExtensions,
   patchSessionLifecycle,
+  patchSessionPluginExtension,
   patchSessionRuntimeOverrides,
   patchSessionTranscript,
   projectSessionEntry,
@@ -66,10 +67,34 @@ describe("session state domain adapters", () => {
     });
   });
 
+  it("patches only one plugin extension namespace", () => {
+    const patched = patchSessionPluginExtension({
+      entry: richEntry,
+      pluginId: "demo",
+      namespace: "other",
+      value: { added: true },
+    });
+    expect(patched.pluginExtensions).toEqual({
+      demo: {
+        custom: { kept: true },
+        other: { added: true },
+      },
+    });
+    expect(patched.sessionFile).toBe(richEntry.sessionFile);
+  });
+
   it("rejects cross-domain accidental writes", () => {
     expect(() =>
       patchSessionDomain(richEntry, "extensions", { sessionFile: "bad.jsonl" } as never),
     ).toThrow("Session extensions patch cannot write sessionFile");
+    expect(() =>
+      patchSessionPluginExtension({
+        entry: richEntry,
+        pluginId: "__proto__",
+        namespace: "state",
+        value: true,
+      }),
+    ).toThrow("pluginId is reserved");
   });
 
   it("keeps minimal projections lightweight", () => {
