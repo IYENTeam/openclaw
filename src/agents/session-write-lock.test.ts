@@ -417,6 +417,43 @@ describe("acquireSessionWriteLock", () => {
     }
   });
 
+  it("cleans stale sessions.json store lock files alongside transcript locks", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-store-lock-cleanup-"));
+    const sessionsDir = path.join(root, "sessions");
+    await fs.mkdir(sessionsDir, { recursive: true });
+    const nowMs = Date.now();
+    const staleStoreLock = path.join(sessionsDir, "sessions.json.lock");
+    const unrelatedJsonLock = path.join(sessionsDir, "other.json.lock");
+
+    try {
+      await fs.writeFile(
+        staleStoreLock,
+        JSON.stringify({ pid: -1, createdAt: new Date(nowMs - 120_000).toISOString() }),
+        "utf8",
+      );
+      await fs.writeFile(
+        unrelatedJsonLock,
+        JSON.stringify({ pid: -1, createdAt: new Date(nowMs - 120_000).toISOString() }),
+        "utf8",
+      );
+
+      const result = await cleanStaleLockFiles({
+        sessionsDir,
+        staleMs: 30_000,
+        nowMs,
+        removeStale: true,
+      });
+
+      expect(result.cleaned.map((entry) => path.basename(entry.lockPath))).toEqual([
+        "sessions.json.lock",
+      ]);
+      await expect(fs.access(staleStoreLock)).rejects.toThrow();
+      await expect(fs.access(unrelatedJsonLock)).resolves.toBeUndefined();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("cleans untracked current-process .jsonl lock files with matching starttime", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-lock-"));
     const sessionsDir = path.join(root, "sessions");

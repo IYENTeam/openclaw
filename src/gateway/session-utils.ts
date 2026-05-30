@@ -1552,6 +1552,20 @@ function shouldHydrateFullSessionListRow(tier: SessionListProjectionTier): boole
   return tier === "details" || tier === "diagnostic";
 }
 
+function buildMinimalGatewaySessionRow(params: {
+  key: string;
+  entry?: SessionEntry;
+}): GatewaySessionRow {
+  const identity = describeSessionIdentity(params.key);
+  return {
+    key: params.key,
+    agentId: identity.agentId,
+    kind: classifySessionKey(params.key, params.entry),
+    updatedAt: params.entry?.updatedAt ?? null,
+    sessionId: params.entry?.sessionId,
+  };
+}
+
 export function buildGatewaySessionRow(params: {
   cfg: OpenClawConfig;
   storePath: string;
@@ -1722,7 +1736,9 @@ export function buildGatewaySessionRow(params: {
         resolveRuntimeChildSessionKeys(key, now, rowContext?.subagentRuns),
         params.storeChildSessionsByKey.get(key),
       )
-    : resolveChildSessionKeys(key, store, now, rowContext?.subagentRuns);
+    : lightweight
+      ? undefined
+      : resolveChildSessionKeys(key, store, now, rowContext?.subagentRuns);
   const latestCompactionCheckpoint = buildCompactionCheckpointPreview(
     resolveLatestCompactionCheckpoint(entry),
   );
@@ -2109,7 +2125,8 @@ export function listSessionsFromStore(params: {
   const projectionTier = resolveSessionListProjectionTier(opts);
   const hydrateFullRows = shouldHydrateFullSessionListRow(projectionTier);
   const hasSpawnedByFilter = typeof opts.spawnedBy === "string" && opts.spawnedBy.length > 0;
-  const needsRowContext = hydrateFullRows || hasSpawnedByFilter;
+  const needsChildSessionIndex = projectionTier === "display" || hydrateFullRows;
+  const needsRowContext = needsChildSessionIndex || hasSpawnedByFilter;
 
   const selection = selectSessionEntries({
     store,
@@ -2122,6 +2139,9 @@ export function listSessionsFromStore(params: {
 
   const sessions = entries.map(([key, entry], index) => {
     const includeTranscriptFields = index < sessionListTranscriptFieldRows;
+    if (projectionTier === "minimal") {
+      return buildMinimalGatewaySessionRow({ key, entry });
+    }
     const rowContextForList = needsRowContext ? getRowContext() : undefined;
     return buildGatewaySessionRow({
       cfg,
@@ -2184,7 +2204,8 @@ export async function listSessionsFromStoreAsync(params: {
   const projectionTier = resolveSessionListProjectionTier(opts);
   const hydrateFullRows = shouldHydrateFullSessionListRow(projectionTier);
   const hasSpawnedByFilter = typeof opts.spawnedBy === "string" && opts.spawnedBy.length > 0;
-  const needsRowContext = hydrateFullRows || hasSpawnedByFilter;
+  const needsChildSessionIndex = projectionTier === "display" || hydrateFullRows;
+  const needsRowContext = needsChildSessionIndex || hasSpawnedByFilter;
 
   const selection = selectSessionEntries({
     store,
@@ -2199,23 +2220,26 @@ export async function listSessionsFromStoreAsync(params: {
   for (let i = 0; i < entries.length; i++) {
     const [key, entry] = entries[i];
     const includeTranscriptFields = i < sessionListTranscriptFieldRows;
-    const rowContextForList = needsRowContext ? getRowContext() : undefined;
-    const row = buildGatewaySessionRow({
-      cfg,
-      storePath,
-      store,
-      key,
-      entry,
-      modelCatalog: params.modelCatalog,
-      now,
-      includeDerivedTitles: false,
-      includeLastMessage: false,
-      transcriptUsageMaxBytes: sessionListTranscriptUsageMaxBytes,
-      storeChildSessionsByKey: rowContextForList?.storeChildSessionsByKey,
-      rowContext: rowContextForList,
-      skipTranscriptUsageFallback: !hydrateFullRows,
-      lightweightListRow: !hydrateFullRows,
-    });
+    const row =
+      projectionTier === "minimal"
+        ? buildMinimalGatewaySessionRow({ key, entry })
+        : buildGatewaySessionRow({
+            cfg,
+            storePath,
+            store,
+            key,
+            entry,
+            modelCatalog: params.modelCatalog,
+            now,
+            includeDerivedTitles: false,
+            includeLastMessage: false,
+            transcriptUsageMaxBytes: sessionListTranscriptUsageMaxBytes,
+            storeChildSessionsByKey: (needsRowContext ? getRowContext() : undefined)
+              ?.storeChildSessionsByKey,
+            rowContext: needsRowContext ? getRowContext() : undefined,
+            skipTranscriptUsageFallback: !hydrateFullRows,
+            lightweightListRow: !hydrateFullRows,
+          });
     if (
       hydrateFullRows &&
       entry?.sessionId &&

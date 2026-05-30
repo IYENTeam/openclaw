@@ -239,6 +239,7 @@ export const SESSION_DOMAIN_KEYS = {
   ],
   extensions: [
     "pluginExtensions",
+    "pluginExtensionSlotKeys",
     "pluginNextTurnInjections",
     "skillsSnapshot",
     "systemPromptReport",

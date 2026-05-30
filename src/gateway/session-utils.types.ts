@@ -34,6 +34,7 @@ export type SessionCompactionCheckpointPreview = Pick<
 
 export type GatewaySessionRow = {
   key: string;
+  agentId?: string;
   spawnedBy?: string;
   spawnedWorkspaceDir?: string;
   forkedFromParent?: boolean;

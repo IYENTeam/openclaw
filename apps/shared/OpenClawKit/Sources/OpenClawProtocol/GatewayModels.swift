@@ -1518,6 +1518,7 @@ public struct SessionsListParams: Codable, Sendable {
     public let includeglobal: Bool?
     public let includeunknown: Bool?
     public let configuredagentsonly: Bool?
+    public let projectiontier: AnyCodable?
     public let includederivedtitles: Bool?
     public let includelastmessage: Bool?
     public let label: String?
@@ -1531,6 +1532,7 @@ public struct SessionsListParams: Codable, Sendable {
         includeglobal: Bool?,
         includeunknown: Bool?,
         configuredagentsonly: Bool?,
+        projectiontier: AnyCodable?,
         includederivedtitles: Bool?,
         includelastmessage: Bool?,
         label: String?,
@@ -1543,6 +1545,7 @@ public struct SessionsListParams: Codable, Sendable {
         self.includeglobal = includeglobal
         self.includeunknown = includeunknown
         self.configuredagentsonly = configuredagentsonly
+        self.projectiontier = projectiontier
         self.includederivedtitles = includederivedtitles
         self.includelastmessage = includelastmessage
         self.label = label
@@ -1557,6 +1560,7 @@ public struct SessionsListParams: Codable, Sendable {
         case includeglobal = "includeGlobal"
         case includeunknown = "includeUnknown"
         case configuredagentsonly = "configuredAgentsOnly"
+        case projectiontier = "projectionTier"
         case includederivedtitles = "includeDerivedTitles"
         case includelastmessage = "includeLastMessage"
         case label

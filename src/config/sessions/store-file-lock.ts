@@ -20,7 +20,7 @@ let testLockOptions: SessionStoreFileLockOptions | null = null;
 function resolveLockOptions(
   options?: SessionStoreFileLockOptions,
 ): Required<SessionStoreFileLockOptions> {
-  const merged = { ...(testLockOptions ?? {}), ...(options ?? {}) };
+  const merged = { ...testLockOptions, ...options };
   const timeoutMs = merged.timeoutMs ?? resolveSessionWriteLockAcquireTimeoutMs();
   return {
     timeoutMs,

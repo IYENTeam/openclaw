@@ -447,7 +447,7 @@ export async function cleanStaleLockFiles(params: {
   const locks: SessionLockInspection[] = [];
   const cleaned: SessionLockInspection[] = [];
   const lockEntries = entries
-    .filter((entry) => entry.name.endsWith(".jsonl.lock"))
+    .filter((entry) => entry.name.endsWith(".jsonl.lock") || entry.name === "sessions.json.lock")
     .toSorted((a, b) => a.name.localeCompare(b.name));
 
   for (const entry of lockEntries) {

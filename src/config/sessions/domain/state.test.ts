@@ -22,6 +22,7 @@ const richEntry: SessionEntry & { unknownFutureField?: unknown } = {
   modelOverride: "gpt-5.4",
   authProfileOverride: "work",
   pluginExtensions: { demo: { custom: { kept: true } } },
+  pluginExtensionSlotKeys: { demo: { custom: "demoCustom" } },
   acp: {
     backend: "codex",
     agent: "main",
@@ -80,6 +81,7 @@ describe("session state domain adapters", () => {
         other: { added: true },
       },
     });
+    expect(patched.pluginExtensionSlotKeys).toEqual({ demo: { custom: "demoCustom" } });
     expect(patched.sessionFile).toBe(richEntry.sessionFile);
   });
 

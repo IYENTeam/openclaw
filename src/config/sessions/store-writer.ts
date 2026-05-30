@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { withSessionStoreFileLock } from "./store-file-lock.js";
 import {
   WRITER_QUEUES,
@@ -10,6 +12,17 @@ export async function withSessionStoreWriterForTest<T>(
   fn: () => Promise<T>,
 ): Promise<T> {
   return await runExclusiveSessionStoreWrite(storePath, fn);
+}
+
+async function resolveSessionStoreWriterKey(storePath: string): Promise<string> {
+  const resolved = path.resolve(storePath);
+  const realFile = await fs.realpath(resolved).catch(() => null);
+  if (realFile) {
+    return realFile;
+  }
+  const dir = path.dirname(resolved);
+  const realDir = await fs.realpath(dir).catch(() => dir);
+  return path.join(realDir, path.basename(resolved));
 }
 
 function getOrCreateWriterQueue(storePath: string): SessionStoreWriterQueue {
@@ -81,7 +94,8 @@ export async function runExclusiveSessionStoreWrite<T>(
       )}`,
     );
   }
-  const queue = getOrCreateWriterQueue(storePath);
+  const writerKey = await resolveSessionStoreWriterKey(storePath);
+  const queue = getOrCreateWriterQueue(writerKey);
 
   const promise = new Promise<T>((resolve, reject) => {
     const task: SessionStoreWriterTask = {
@@ -91,7 +105,7 @@ export async function runExclusiveSessionStoreWrite<T>(
     };
 
     queue.pending.push(task);
-    void drainSessionStoreWriterQueue(storePath);
+    void drainSessionStoreWriterQueue(writerKey);
   });
 
   return await promise;

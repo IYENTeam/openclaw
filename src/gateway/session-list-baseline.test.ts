@@ -2,7 +2,7 @@ import { performance } from "node:perf_hooks";
 import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import type { SessionEntry } from "../config/sessions.js";
-import { listSessionsFromStore } from "./session-utils.js";
+import { buildGatewaySessionRow, listSessionsFromStore } from "./session-utils.js";
 
 const cfg = {
   session: { mainKey: "main" },
@@ -54,5 +54,68 @@ describe("sessions.list projection hot-path baseline", () => {
     ).toBe(true);
     expect(JSON.stringify(measurements)).not.toContain("/Users/");
     console.info("sessions.list synthetic baseline", measurements);
+  });
+
+  it("enforces the public minimal projection shape", () => {
+    const store = createSyntheticStore(1);
+    const result = listSessionsFromStore({
+      cfg,
+      storePath: "/tmp/openclaw-session-list-baseline/sessions.json",
+      store,
+      opts: { projectionTier: "minimal" },
+    });
+
+    expect(result.sessions).toHaveLength(1);
+    expect(Object.keys(result.sessions[0] ?? {}).toSorted()).toEqual([
+      "agentId",
+      "key",
+      "kind",
+      "sessionId",
+      "updatedAt",
+    ]);
+    expect(result.sessions[0]).toMatchObject({
+      agentId: "main",
+      key: "agent:main:slack:channel:c0000",
+      kind: "group",
+      sessionId: "synthetic-0",
+    });
+  });
+
+  it("keeps display child links from a prebuilt list index without lightweight fallback scans", () => {
+    const now = Date.now();
+    const parentKey = "agent:main:dashboard:parent";
+    const childKey = "agent:main:dashboard:child";
+    const store: Record<string, SessionEntry> = {
+      [parentKey]: {
+        sessionId: "parent",
+        updatedAt: now,
+      },
+      [childKey]: {
+        sessionId: "child",
+        updatedAt: now - 1,
+        parentSessionKey: parentKey,
+      },
+    };
+
+    const lightweightRowWithoutListIndex = buildGatewaySessionRow({
+      cfg,
+      storePath: "/tmp/openclaw-session-list-baseline/sessions.json",
+      store,
+      key: parentKey,
+      entry: store[parentKey],
+      now,
+      lightweightListRow: true,
+      skipTranscriptUsageFallback: true,
+    });
+    expect(lightweightRowWithoutListIndex.childSessions).toBeUndefined();
+
+    const displayList = listSessionsFromStore({
+      cfg,
+      storePath: "/tmp/openclaw-session-list-baseline/sessions.json",
+      store,
+      opts: { projectionTier: "display" },
+    });
+    const parent = displayList.sessions.find((session) => session.key === parentKey);
+    expect(parent?.childSessions).toEqual([childKey]);
   });
 });

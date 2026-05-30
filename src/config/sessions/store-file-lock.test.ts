@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   SessionWriteLockTimeoutError,
   isSessionWriteLockTimeoutError,
@@ -183,6 +183,63 @@ describe("session store file lock", () => {
         label: "first",
       });
       expect(store["agent:main:main"]?.updatedAt).toBeGreaterThanOrEqual(2);
+      await fs.rm(resolveSessionStoreFileLockPath(storePath), { force: true });
     });
+  });
+
+  it("serializes in-process writers that address the same store through a symlink", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-session-store-lock-alias-"));
+    const storePath = path.join(dir, "sessions.json");
+    const aliasStorePath = path.join(dir, "sessions-alias.json");
+    try {
+      await saveSessionStore(
+        storePath,
+        {
+          "agent:main:main": { sessionId: "main", updatedAt: 1 } as SessionEntry,
+        },
+        { skipMaintenance: true },
+      );
+      await fs.symlink(storePath, aliasStorePath, "file");
+
+      const order: string[] = [];
+      let releaseFirst: () => void = () => undefined;
+      const firstMayFinish = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      const firstStarted = updateSessionStoreEntry({
+        storePath,
+        sessionKey: "agent:main:main",
+        update: async () => {
+          order.push("first-start");
+          await firstMayFinish;
+          order.push("first-end");
+          return { label: "first" };
+        },
+      });
+      await vi.waitFor(() => expect(order).toEqual(["first-start"]));
+      const second = updateSessionStoreEntry({
+        storePath: aliasStorePath,
+        sessionKey: "agent:main:main",
+        update: async () => {
+          order.push("second-start");
+          return { updatedAt: 2 };
+        },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(order).toEqual(["first-start"]);
+      releaseFirst();
+      await Promise.all([firstStarted, second]);
+
+      expect(order).toEqual(["first-start", "first-end", "second-start"]);
+      const store = await readStore(storePath);
+      expect(store["agent:main:main"]).toMatchObject({ label: "first" });
+      expect(store["agent:main:main"]?.updatedAt).toBeGreaterThanOrEqual(2);
+    } finally {
+      await fs.unlink(aliasStorePath).catch(() => undefined);
+      await fs
+        .rm(resolveSessionStoreFileLockPath(storePath), { force: true })
+        .catch(() => undefined);
+      await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    }
   });
 });

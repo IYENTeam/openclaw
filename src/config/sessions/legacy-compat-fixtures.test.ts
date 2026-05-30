@@ -6,7 +6,6 @@ import {
   clearSessionStoreCacheForTest,
   loadSessionStore,
   updateLastRoute,
-  updateSessionStore,
   updateSessionStoreEntry,
 } from "../sessions.js";
 import { applySessionStoreMigrations } from "./store-migrations.js";
@@ -23,122 +22,50 @@ const CRON_RUN_KEY = "agent:main:cron:daily-report:run:run-1";
 const ARCHIVE_KEY = "agent:main:archive:reset-demo";
 const MODEL_OVERRIDE_KEY = "agent:main:telegram:direct:u1";
 
-function entry(overrides: Partial<SessionEntry> = {}): SessionEntry {
-  return {
-    sessionId: overrides.sessionId ?? "sid-base",
-    updatedAt: overrides.updatedAt ?? Date.now(),
-    ...overrides,
-  };
-}
-
-function createLegacyCompatibilityStore(): Record<string, SessionEntry> {
-  return {
-    [MIXED_CASE_KEY]: entry({
-      sessionId: "case-session",
-      updatedAt: 20,
-      chatType: "direct",
-      channel: "webchat",
-      origin: { provider: "webchat", chatType: "direct", from: "WebChat:MiXeD-User" },
-    }),
-    [MISSING_TRANSCRIPT_KEY]: entry({
-      sessionId: "missing-transcript",
-      sessionFile: "sessions/missing-transcript.jsonl",
-      channel: "slack",
-      chatType: "channel",
-    }),
-    [PLUGIN_KEY]: entry({
-      sessionId: "plugin-runtime",
-      pluginOwnerId: "demo-plugin",
-      pluginExtensions: {
-        "demo-plugin": {
-          privateState: { version: 1, nested: ["keep", "unknown"] },
-        },
-      },
-      pluginNextTurnInjections: {
-        "demo-plugin": [
-          {
-            id: "inject-1",
-            pluginId: "demo-plugin",
-            text: "next turn",
-            placement: "append_context",
-            createdAt: 10,
-          },
-        ],
-      },
-    }),
-    [ACP_KEY]: entry({
-      sessionId: "acp-session",
-      acp: {
-        backend: "codex",
-        agent: "main",
-        runtimeSessionName: "workspace-1",
-        mode: "persistent",
-        cwd: "/tmp/openclaw-test-workspace",
-        state: "running",
-        lastActivityAt: 11,
-        identity: {
-          state: "resolved",
-          acpxRecordId: "record-1",
-          acpxSessionId: "acpx-1",
-          agentSessionId: "agent-session-1",
-          source: "event",
-          lastUpdatedAt: 12,
-        },
-      },
-    }),
-    [SUBAGENT_KEY]: entry({
-      sessionId: "subagent-child",
-      spawnedBy: "agent:main:slack:channel:c123",
-      spawnedWorkspaceDir: "/tmp/openclaw-child-workspace",
-      parentSessionKey: "agent:main:slack:channel:c123",
-      forkedFromParent: true,
-      spawnDepth: 1,
-      subagentRole: "leaf",
-      subagentControlScope: "none",
-      status: "done",
-    }),
-    [HEARTBEAT_KEY]: entry({
-      sessionId: "heartbeat-child",
-      heartbeatIsolatedBaseSessionKey: "agent:main:slack:channel:c123",
-      lastHeartbeatText: "still alive",
-      lastHeartbeatSentAt: 15,
-      heartbeatTaskState: { ping: 15 },
-    }),
-    [CRON_RUN_KEY]: entry({
-      sessionId: "cron-run",
-      status: "timeout",
-      startedAt: 30,
-      endedAt: 40,
-      runtimeMs: 10,
-    }),
-    [ARCHIVE_KEY]: entry({
-      sessionId: "archived-reset",
-      sessionFile: "archive/reset/archived-reset.jsonl",
-      status: "killed",
-    }),
-    [MODEL_OVERRIDE_KEY]: entry({
-      sessionId: "model-override",
-      providerOverride: "openai",
-      modelOverride: "gpt-5.4",
-      modelOverrideSource: "user",
-      authProfileOverride: "work",
-      authProfileOverrideSource: "user",
-      thinkingLevel: "high",
-      fastMode: true,
-      liveModelSwitchPending: true,
-    }),
-  };
+async function readHistoricalLegacyCompatibilityStore(): Promise<Record<string, SessionEntry>> {
+  const raw = await fs.readFile(
+    new URL("./fixtures/legacy-sessions-store.json", import.meta.url),
+    "utf8",
+  );
+  return JSON.parse(raw) as Record<string, SessionEntry>;
 }
 
 async function writeFixtureStore(storePath: string): Promise<Record<string, SessionEntry>> {
-  const store = createLegacyCompatibilityStore();
+  const raw = await fs.readFile(
+    new URL("./fixtures/legacy-sessions-store.json", import.meta.url),
+    "utf8",
+  );
+  const store = JSON.parse(raw) as Record<string, SessionEntry>;
   await fs.mkdir(path.dirname(storePath), { recursive: true });
-  await fs.writeFile(storePath, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+  await fs.writeFile(storePath, raw, "utf8");
   clearSessionStoreCacheForTest();
   return store;
 }
 
 describe("legacy session compatibility fixtures", () => {
+  it("pins historical serialized sessions.json bytes as the compatibility baseline", async () => {
+    const fixture = await readHistoricalLegacyCompatibilityStore();
+    expect(Object.keys(fixture).toSorted()).toEqual(
+      [
+        ACP_KEY,
+        ARCHIVE_KEY,
+        CRON_RUN_KEY,
+        HEARTBEAT_KEY,
+        MISSING_TRANSCRIPT_KEY,
+        MIXED_CASE_KEY,
+        MODEL_OVERRIDE_KEY,
+        PLUGIN_KEY,
+        SUBAGENT_KEY,
+      ].toSorted(),
+    );
+    expect(fixture[PLUGIN_KEY]?.pluginExtensions).toEqual({
+      "demo-plugin": {
+        privateState: { version: 1, nested: ["keep", "unknown"] },
+      },
+    });
+    expect(fixture[ACP_KEY]?.acp?.identity?.source).toBe("event");
+  });
+
   it("loads and preserves the legacy edge-case fixture set", async () => {
     await withTempDir({ prefix: "openclaw-legacy-session-fixtures-" }, async (dir) => {
       const storePath = path.join(dir, "sessions.json");
@@ -159,7 +86,7 @@ describe("legacy session compatibility fixtures", () => {
       });
 
       expect(Object.keys(loaded)).toHaveLength(9);
-      expect(loaded[MIXED_CASE_KEY]).toMatchObject(fixture[MIXED_CASE_KEY]!);
+      expect(loaded[MIXED_CASE_KEY]).toMatchObject(fixture[MIXED_CASE_KEY]);
       expect(loaded[PLUGIN_KEY]?.pluginExtensions).toEqual(fixture[PLUGIN_KEY]?.pluginExtensions);
       expect(loaded[ACP_KEY]?.acp).toEqual(fixture[ACP_KEY]?.acp);
       expect(loaded[SUBAGENT_KEY]).toMatchObject({

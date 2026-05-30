@@ -1,0 +1,116 @@
+{
+  "Agent:Main:WebChat:Direct:MiXeD-User": {
+    "sessionId": "case-session",
+    "updatedAt": 20,
+    "chatType": "direct",
+    "channel": "webchat",
+    "origin": {
+      "provider": "webchat",
+      "chatType": "direct",
+      "from": "WebChat:MiXeD-User"
+    }
+  },
+  "agent:main:slack:channel:c-missing": {
+    "sessionId": "missing-transcript",
+    "updatedAt": 1780110000000,
+    "sessionFile": "sessions/missing-transcript.jsonl",
+    "channel": "slack",
+    "chatType": "channel"
+  },
+  "agent:main:plugin:runtime:demo": {
+    "sessionId": "plugin-runtime",
+    "updatedAt": 1780110000000,
+    "pluginOwnerId": "demo-plugin",
+    "pluginExtensions": {
+      "demo-plugin": {
+        "privateState": {
+          "version": 1,
+          "nested": [
+            "keep",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "pluginNextTurnInjections": {
+      "demo-plugin": [
+        {
+          "id": "inject-1",
+          "pluginId": "demo-plugin",
+          "text": "next turn",
+          "placement": "append_context",
+          "createdAt": 10
+        }
+      ]
+    }
+  },
+  "agent:main:acp:workspace-1": {
+    "sessionId": "acp-session",
+    "updatedAt": 1780110000000,
+    "acp": {
+      "backend": "codex",
+      "agent": "main",
+      "runtimeSessionName": "workspace-1",
+      "mode": "persistent",
+      "cwd": "/tmp/openclaw-test-workspace",
+      "state": "running",
+      "lastActivityAt": 11,
+      "identity": {
+        "state": "resolved",
+        "acpxRecordId": "record-1",
+        "acpxSessionId": "acpx-1",
+        "agentSessionId": "agent-session-1",
+        "source": "event",
+        "lastUpdatedAt": 12
+      }
+    }
+  },
+  "agent:main:subagent:child-1": {
+    "sessionId": "subagent-child",
+    "updatedAt": 1780110000000,
+    "spawnedBy": "agent:main:slack:channel:c123",
+    "spawnedWorkspaceDir": "/tmp/openclaw-child-workspace",
+    "parentSessionKey": "agent:main:slack:channel:c123",
+    "forkedFromParent": true,
+    "spawnDepth": 1,
+    "subagentRole": "leaf",
+    "subagentControlScope": "none",
+    "status": "done"
+  },
+  "agent:main:slack:channel:c123:heartbeat": {
+    "sessionId": "heartbeat-child",
+    "updatedAt": 1780110000000,
+    "heartbeatIsolatedBaseSessionKey": "agent:main:slack:channel:c123",
+    "lastHeartbeatText": "still alive",
+    "lastHeartbeatSentAt": 15,
+    "heartbeatTaskState": {
+      "ping": 15
+    }
+  },
+  "agent:main:cron:daily-report:run:run-1": {
+    "sessionId": "cron-run",
+    "updatedAt": 1780110000000,
+    "status": "timeout",
+    "startedAt": 30,
+    "endedAt": 40,
+    "runtimeMs": 10
+  },
+  "agent:main:archive:reset-demo": {
+    "sessionId": "archived-reset",
+    "updatedAt": 1780110000000,
+    "sessionFile": "archive/reset/archived-reset.jsonl",
+    "status": "killed"
+  },
+  "agent:main:telegram:direct:u1": {
+    "sessionId": "model-override",
+    "updatedAt": 1780110000000,
+    "providerOverride": "openai",
+    "modelOverride": "gpt-5.4",
+    "modelOverrideSource": "user",
+    "authProfileOverride": "work",
+    "authProfileOverrideSource": "user",
+    "thinkingLevel": "high",
+    "fastMode": true,
+    "liveModelSwitchPending": true
+  }
+}
