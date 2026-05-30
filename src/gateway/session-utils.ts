@@ -55,6 +55,7 @@ import {
   type SessionStoreTarget,
   type SessionScope,
 } from "../config/sessions.js";
+import { describeSessionIdentity } from "../config/sessions/domain/index.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { openRootFileSync } from "../infra/boundary-file-read.js";
 import { projectPluginSessionExtensionsSync } from "../plugins/host-hook-state.js";
@@ -64,7 +65,6 @@ import {
   normalizeMainKey,
   parseAgentSessionKey,
 } from "../routing/session-key.js";
-import { isCronRunSessionKey } from "../sessions/session-key-utils.js";
 import {
   AVATAR_MAX_BYTES,
   isAvatarDataUrl,
@@ -635,10 +635,8 @@ function resolveTranscriptUsageFallback(params: {
   if (!entry?.sessionId) {
     return null;
   }
-  const parsed = parseAgentSessionKey(params.key);
-  const agentId = parsed?.agentId
-    ? normalizeAgentId(parsed.agentId)
-    : resolveDefaultAgentId(params.cfg);
+  const identity = describeSessionIdentity(params.key);
+  const agentId = identity.shape === "agent" ? identity.agentId : resolveDefaultAgentId(params.cfg);
   const snapshot = readRecentSessionUsageFromTranscript(
     entry.sessionId,
     params.storePath,
@@ -689,11 +687,11 @@ export function resolveDeletedAgentIdFromSessionKey(
   cfg: OpenClawConfig,
   sessionKey: string,
 ): string | null {
-  const parsed = parseAgentSessionKey(sessionKey);
-  if (!parsed) {
+  const identity = describeSessionIdentity(sessionKey);
+  if (identity.shape !== "agent") {
     return null;
   }
-  const agentId = normalizeAgentId(parsed.agentId);
+  const agentId = normalizeAgentId(identity.agentId);
   if (listAgentIds(cfg).includes(agentId)) {
     return null;
   }
@@ -874,8 +872,7 @@ export function classifySessionKey(key: string, entry?: SessionEntry): GatewaySe
 export function parseGroupKey(
   key: string,
 ): { channel?: string; kind?: "group" | "channel"; id?: string } | null {
-  const agentParsed = parseAgentSessionKey(key);
-  const rawKey = agentParsed?.rest ?? key;
+  const rawKey = describeSessionIdentity(key).requestKey ?? key;
   const parts = rawKey.split(":").filter(Boolean);
   if (parts.length >= 3) {
     const [channel, kind, ...rest] = parts;
@@ -1584,8 +1581,11 @@ export function buildGatewaySessionRow(params: {
     entry?.label ??
     originLabel;
   const deliveryFields = normalizeSessionDeliveryFields(entry);
-  const parsedAgent = parseAgentSessionKey(key);
-  const sessionAgentId = normalizeAgentId(parsedAgent?.agentId ?? resolveDefaultAgentId(cfg));
+  const sessionIdentity = describeSessionIdentity(key);
+  const sessionAgentId =
+    sessionIdentity.shape === "agent"
+      ? sessionIdentity.agentId
+      : normalizeAgentId(resolveDefaultAgentId(cfg));
   const rowContext = params.rowContext;
   const subagentRun = rowContext
     ? rowContext.subagentRuns.getDisplaySubagentRun(key)
@@ -1970,7 +1970,7 @@ function filterSessionEntries(params: {
 
   let entries = Object.entries(store)
     .filter(([key]) => {
-      if (isCronRunSessionKey(key)) {
+      if (describeSessionIdentity(key).kind === "cron-run") {
         return false;
       }
       if (!includeGlobal && key === "global") {
@@ -1983,11 +1983,8 @@ function filterSessionEntries(params: {
         if (key === "global" || key === "unknown") {
           return false;
         }
-        const parsed = parseAgentSessionKey(key);
-        if (!parsed) {
-          return false;
-        }
-        return normalizeAgentId(parsed.agentId) === agentId;
+        const identity = describeSessionIdentity(key);
+        return identity.shape === "agent" && identity.agentId === agentId;
       }
       return true;
     })
