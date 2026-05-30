@@ -92,6 +92,7 @@ import {
 import { createReplyToModeFilterForChannel, resolveReplyToMode } from "./reply-threading.js";
 import { incrementRunCompactionCount, persistRunSessionUsage } from "./session-run-accounting.js";
 import { resolveSourceReplyVisibilityPolicy } from "./source-reply-delivery-mode.js";
+import { buildTaskDraftGateReply, shouldApplyTaskDraftGate } from "./task-draft-gate.js";
 import { createTypingSignaler } from "./typing-mode.js";
 import type { TypingController } from "./typing.js";
 
@@ -446,7 +447,10 @@ function derivePromptSegments(prompt: string | undefined): TracePromptSegmentVie
   if (userChars > 0) {
     addChars("user_message", userChars);
   }
-  const result = Array.from(segments.entries()).map(([key, chars]) => ({ key, chars }));
+  const result = Array.from(segments.entries()).map(([key, chars]) => ({
+    key,
+    chars,
+  }));
   return result.length > 0 ? result : undefined;
 }
 
@@ -878,7 +882,9 @@ function enqueueCommitmentExtractionForTurn(params: {
     userText,
     assistantText,
     ...(params.sessionCtx.MessageSidFull || params.sessionCtx.MessageSid
-      ? { sourceMessageId: params.sessionCtx.MessageSidFull ?? params.sessionCtx.MessageSid }
+      ? {
+          sourceMessageId: params.sessionCtx.MessageSidFull ?? params.sessionCtx.MessageSid,
+        }
       : {}),
     sourceRunId: params.runId,
   });
@@ -929,6 +935,7 @@ export async function runReplyAgent(params: {
   storePath?: string;
   defaultModel: string;
   agentCfgContextTokens?: number;
+  agentDefaults?: import("../../config/types.agent-defaults.js").AgentDefaultsConfig;
   resolvedVerboseLevel: VerboseLevel;
   toolProgressDetail?: "explain" | "raw";
   isNewSession: boolean;
@@ -967,6 +974,7 @@ export async function runReplyAgent(params: {
     storePath,
     defaultModel,
     agentCfgContextTokens,
+    agentDefaults,
     resolvedVerboseLevel,
     toolProgressDetail,
     isNewSession,
@@ -1077,6 +1085,40 @@ export async function runReplyAgent(params: {
   if (activeRunQueueAction === "drop") {
     typing.cleanup();
     return undefined;
+  }
+
+  if (
+    shouldApplyTaskDraftGate({
+      agentDefaults,
+      sessionCtx,
+      followupRun,
+      resolvedQueue,
+      isHeartbeat,
+      isActive,
+      resetTriggered: effectiveResetTriggered,
+    })
+  ) {
+    const queuedRun: FollowupRun = {
+      ...followupRun,
+      run: { ...followupRun.run, taskDraftGateContinuation: true },
+    };
+    enqueueFollowupRun(
+      queueKey,
+      queuedRun,
+      {
+        mode: "queue",
+        debounceMs: resolvedQueue.debounceMs,
+        cap: resolvedQueue.cap,
+        dropPolicy: resolvedQueue.dropPolicy,
+      },
+      "message-id",
+      queuedRunFollowupTurn,
+      false,
+    );
+    scheduleFollowupDrain(queueKey, queuedRunFollowupTurn);
+    await touchActiveSessionEntry();
+    typing.cleanup();
+    return buildTaskDraftGateReply({ sessionCtx, followupRun });
   }
 
   if (activeRunQueueAction === "enqueue-followup") {
@@ -1622,7 +1664,9 @@ export async function runReplyAgent(params: {
     const verboseNotices: ReplyPayload[] = [];
 
     if (verboseEnabled && activeIsNewSession) {
-      verboseNotices.push({ text: `🧭 New session: ${followupRun.run.sessionId}` });
+      verboseNotices.push({
+        text: `🧭 New session: ${followupRun.run.sessionId}`,
+      });
     }
 
     if (fallbackTransition.fallbackTransitioned) {
@@ -1798,7 +1842,9 @@ export async function runReplyAgent(params: {
         ? { sessionCompactions: activeSessionEntry.compactionCount }
         : {}),
       ...(typeof runResult.meta?.contextManagement?.lastTurnCompactions === "number"
-        ? { lastTurnCompactions: runResult.meta.contextManagement.lastTurnCompactions }
+        ? {
+            lastTurnCompactions: runResult.meta.contextManagement.lastTurnCompactions,
+          }
         : typeof runResult.meta?.agentMeta?.compactionCount === "number"
           ? { lastTurnCompactions: runResult.meta.agentMeta.compactionCount }
           : {}),

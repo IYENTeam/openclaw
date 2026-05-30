@@ -47,20 +47,21 @@ export type EffectiveContextPruningSettings = {
 
 export const DEFAULT_CONTEXT_PRUNING_SETTINGS: EffectiveContextPruningSettings = {
   mode: "cache-ttl",
-  ttlMs: 5 * 60 * 1000,
-  keepLastAssistants: 3,
-  softTrimRatio: 0.3,
-  hardClearRatio: 0.5,
-  minPrunableToolChars: 50_000,
+  ttlMs: 10 * 60 * 1000,
+  keepLastAssistants: 2,
+  softTrimRatio: 0.18,
+  hardClearRatio: 0.18,
+  minPrunableToolChars: 2_000,
   tools: {},
   softTrim: {
-    maxChars: 4_000,
-    headChars: 1_500,
-    tailChars: 1_500,
+    maxChars: 0,
+    headChars: 0,
+    tailChars: 0,
   },
   hardClear: {
     enabled: true,
-    placeholder: "[Old tool result content cleared]",
+    placeholder:
+      "[Old tool result omitted from active context. Re-run the tool or inspect the archived session transcript if exact output is needed.]",
   },
 };
 

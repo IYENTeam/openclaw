@@ -4,8 +4,13 @@ import { ChannelType } from "../internal/discord.js";
 import { EMPTY_DISCORD_TEST_CONFIG } from "../test-support/config.js";
 type MaybeCreateDiscordAutoThreadFn = typeof import("./threading.js").maybeCreateDiscordAutoThread;
 
-const { generateThreadTitleMock } = vi.hoisted(() => ({
+const { classifyDiscordThreadRouteMock, generateThreadTitleMock } = vi.hoisted(() => ({
+  classifyDiscordThreadRouteMock: vi.fn(),
   generateThreadTitleMock: vi.fn(),
+}));
+
+vi.mock("./thread-route-classifier.js", () => ({
+  classifyDiscordThreadRoute: classifyDiscordThreadRouteMock,
 }));
 
 vi.mock("./thread-title.js", () => ({
@@ -56,6 +61,7 @@ beforeEach(() => {
   postMock.mockReset();
   getMock.mockReset();
   patchMock.mockReset();
+  classifyDiscordThreadRouteMock.mockReset();
   generateThreadTitleMock.mockReset();
 });
 
@@ -95,6 +101,33 @@ describe("maybeCreateDiscordAutoThread", () => {
   it("creates auto-thread if channelType is GuildText", async () => {
     postMock.mockResolvedValueOnce({ id: "thread1" });
     const result = await maybeCreateDiscordAutoThread(createBaseParams());
+    expect(result).toBe("thread1");
+    expect(postMock).toHaveBeenCalled();
+  });
+  it("keeps classifier-routed main messages out of a new thread", async () => {
+    classifyDiscordThreadRouteMock.mockResolvedValueOnce("main");
+    const result = await maybeCreateDiscordAutoThread(
+      createBaseParams({
+        baseText: "ㅎㅇㅎㅇ",
+        channelConfig: { allowed: true, autoThread: true, autoThreadMode: "classifier" },
+      }),
+    );
+    expect(result).toBeUndefined();
+    expect(classifyDiscordThreadRouteMock).toHaveBeenCalledWith(
+      expect.objectContaining({ messageText: "ㅎㅇㅎㅇ" }),
+    );
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it("creates a thread when the classifier selects new_thread", async () => {
+    classifyDiscordThreadRouteMock.mockResolvedValueOnce("new_thread");
+    postMock.mockResolvedValueOnce({ id: "thread1" });
+    const result = await maybeCreateDiscordAutoThread(
+      createBaseParams({
+        baseText: "로그 보고 원인 파악하고 해결해줘",
+        channelConfig: { allowed: true, autoThread: true, autoThreadMode: "classifier" },
+      }),
+    );
     expect(result).toBe("thread1");
     expect(postMock).toHaveBeenCalled();
   });

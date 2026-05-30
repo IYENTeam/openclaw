@@ -63,7 +63,7 @@ const MAX_COMPACTION_SUMMARY_CHARS = 16_000;
 const MAX_FILE_OPS_SECTION_CHARS = 2_000;
 const MAX_FILE_OPS_LIST_CHARS = 900;
 const SUMMARY_TRUNCATED_MARKER = "\n\n[Compaction summary truncated to fit budget]";
-const DEFAULT_RECENT_TURNS_PRESERVE = 3;
+const DEFAULT_RECENT_TURNS_PRESERVE = 6;
 const DEFAULT_QUALITY_GUARD_MAX_RETRIES = 1;
 const MAX_RECENT_TURNS_PRESERVE = 12;
 const MAX_QUALITY_GUARD_MAX_RETRIES = 3;
@@ -680,6 +680,71 @@ function splitPreservedRecentTurns(params: {
   if (preservedIndexSet.size === 0) {
     return { summarizableMessages: params.messages, preservedMessages: [] };
   }
+
+  // If the recent-turn boundary starts immediately after a completed tool loop,
+  // pull that assistant/toolResult group into the preserved suffix.  Otherwise
+  // the summarizer sees the tool loop while the preserved suffix starts at the
+  // follow-up user turn, losing the high-signal result that the follow-up likely
+  // depends on.  This mirrors Hermes' compression boundary strategy: prefer
+  // moving the boundary over splitting tool-call/result groups.
+  let preservedStartIndex = Math.min(...preservedIndexSet);
+  while (preservedStartIndex > 0) {
+    const firstPreservedMessage = params.messages[preservedStartIndex];
+    if ((firstPreservedMessage as { role?: unknown }).role !== "user") {
+      break;
+    }
+
+    const previousMessage = params.messages[preservedStartIndex - 1];
+    if ((previousMessage as { role?: unknown }).role !== "toolResult") {
+      break;
+    }
+    const previousToolResultId = extractToolResultId(
+      previousMessage as Extract<AgentMessage, { role: "toolResult" }>,
+    );
+    if (!previousToolResultId) {
+      break;
+    }
+
+    let assistantIndex = preservedStartIndex - 2;
+    while (
+      assistantIndex >= 0 &&
+      (params.messages[assistantIndex] as { role?: unknown }).role === "toolResult"
+    ) {
+      assistantIndex -= 1;
+    }
+    const assistantMessage = assistantIndex >= 0 ? params.messages[assistantIndex] : null;
+    if (!assistantMessage || (assistantMessage as { role?: unknown }).role !== "assistant") {
+      break;
+    }
+    const assistantToolCalls = extractToolCallsFromAssistant(
+      assistantMessage as Extract<AgentMessage, { role: "assistant" }>,
+    );
+    if (!assistantToolCalls.some((toolCall) => toolCall.id === previousToolResultId)) {
+      break;
+    }
+
+    let previousConversationIndex = assistantIndex - 1;
+    while (previousConversationIndex >= 0) {
+      const role = (params.messages[previousConversationIndex] as { role?: unknown }).role;
+      if (role === "user" || role === "assistant") {
+        break;
+      }
+      previousConversationIndex -= 1;
+    }
+    if (
+      previousConversationIndex < 0 ||
+      (params.messages[previousConversationIndex] as { role?: unknown }).role !== "assistant"
+    ) {
+      break;
+    }
+
+    preservedIndexSet.add(assistantIndex);
+    for (let i = assistantIndex + 1; i < preservedStartIndex; i += 1) {
+      preservedIndexSet.add(i);
+    }
+    preservedStartIndex = assistantIndex;
+  }
+
   const preservedToolCallIds = new Set<string>();
   for (let i = 0; i < params.messages.length; i += 1) {
     if (!preservedIndexSet.has(i)) {

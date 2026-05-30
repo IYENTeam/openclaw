@@ -14,6 +14,7 @@ import {
   type Client,
 } from "../internal/discord.js";
 import { resolveDiscordMessageChannelId } from "./message-utils.js";
+import { classifyDiscordThreadRoute } from "./thread-route-classifier.js";
 import { generateThreadTitle } from "./thread-title.js";
 import { resolveDiscordReplyDeliveryPlan, sanitizeDiscordThreadName } from "./threading.starter.js";
 import type {
@@ -144,6 +145,21 @@ export async function maybeCreateDiscordAutoThread(
   const messageChannelId = resolveTrimmedDiscordMessageChannelId(params);
   if (!messageChannelId) {
     return undefined;
+  }
+  if (params.channelConfig?.autoThreadMode === "classifier") {
+    const routeDecision = await classifyDiscordThreadRoute({
+      cfg: params.cfg,
+      agentId: params.agentId ?? "main",
+      messageText: params.baseText || params.combinedBody,
+      channelName: params.channelName,
+      channelDescription: params.channelDescription,
+    });
+    if (routeDecision !== "new_thread") {
+      logVerbose(
+        `discord: autoThread classifier kept message ${params.message.id} in main channel ${messageChannelId}`,
+      );
+      return undefined;
+    }
   }
   try {
     const rawThreadSource = params.baseText || params.combinedBody || "Thread";

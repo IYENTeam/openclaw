@@ -8,16 +8,22 @@ const MAX_UNTRUSTED_INSTRUCTION_CHARS = 4000;
 const MAX_ASK_OVERLAP_TOKENS = 12;
 const MIN_ASK_OVERLAP_TOKENS_FOR_DOUBLE_MATCH = 3;
 const REQUIRED_SUMMARY_SECTIONS = [
-  "## Decisions",
-  "## Open TODOs",
-  "## Constraints/Rules",
-  "## Pending user asks",
-  "## Exact identifiers",
+  "## Active Task",
+  "## Completed Actions",
+  "## Key Decisions",
+  "## Resolved Questions",
+  "## Pending Questions",
+  "## Final Artifacts / URLs / IDs",
+  "## Last Verification",
+  "## Remaining Work",
+  "## Blockers",
+  "## Safety / Do-Not-Do",
+  "## Critical Context",
 ] as const;
 const STRICT_EXACT_IDENTIFIERS_INSTRUCTION =
-  "For ## Exact identifiers, preserve literal values exactly as seen (IDs, URLs, file paths, ports, hashes, dates, times).";
+  "For ## Final Artifacts / URLs / IDs and ## Critical Context, preserve literal values exactly as seen (IDs, URLs, file paths, ports, hashes, dates, times).";
 const POLICY_OFF_EXACT_IDENTIFIERS_INSTRUCTION =
-  "For ## Exact identifiers, include identifiers only when needed for continuity; do not enforce literal-preservation rules.";
+  "For ## Final Artifacts / URLs / IDs and ## Critical Context, include identifiers only when needed for continuity; do not enforce literal-preservation rules.";
 
 export function wrapUntrustedInstructionBlock(label: string, text: string): string {
   return wrapUntrustedPromptDataBlock({
@@ -38,7 +44,7 @@ function resolveExactIdentifierSectionInstruction(
     const custom = summarizationInstructions?.identifierInstructions?.trim();
     if (custom) {
       const customBlock = wrapUntrustedInstructionBlock(
-        "For ## Exact identifiers, apply this operator-defined policy text",
+        "For ## Critical Context, apply this operator-defined policy text",
         custom,
       );
       if (customBlock) {
@@ -59,6 +65,14 @@ export function buildCompactionStructureInstructions(
     "Produce a compact, factual summary with these exact section headings:",
     ...REQUIRED_SUMMARY_SECTIONS,
     identifierSectionInstruction,
+    "In ## Active Task, include the current objective and source ticket/channel when available.",
+    "In ## Completed Actions, include only actions that actually completed and caused observable artifacts or state changes.",
+    "In ## Final Artifacts / URLs / IDs, preserve files, PR/Issue URLs, ticket IDs, job/session/workspace IDs, and other exact identifiers needed to resume work.",
+    "In ## Last Verification, include the last verification command or inspection method and result; write `검증 없음` if no verification happened.",
+    "In ## Remaining Work, separate immediately actionable work from work requiring external input, approval, credentials, or user decisions.",
+    "In ## Blockers, include only genuine blockers; do not present work the assistant can do now as blocked.",
+    "In ## Safety / Do-Not-Do, preserve privacy/security/channel-isolation cautions and do not re-expose raw secret values.",
+    "Compress tool outputs to one-line summaries, e.g. `[exec] npm test → exit 0 (47 lines)`.",
     "Do not omit unresolved asks from the user.",
     "When prior compaction summaries are present, re-distill them with new messages and remove stale duplicate detail.",
   ].join("\n");
@@ -101,22 +115,39 @@ export function buildStructuredFallbackSummary(
   if (trimmedPreviousSummary && hasRequiredSummarySections(trimmedPreviousSummary)) {
     return trimmedPreviousSummary;
   }
-  const exactIdentifiersSummary = "None captured.";
   return [
-    "## Decisions",
+    "## Active Task",
     trimmedPreviousSummary || "No prior history.",
     "",
-    "## Open TODOs",
+    "## Completed Actions",
     "None.",
     "",
-    "## Constraints/Rules",
+    "## Key Decisions",
     "None.",
     "",
-    "## Pending user asks",
+    "## Resolved Questions",
     "None.",
     "",
-    "## Exact identifiers",
-    exactIdentifiersSummary,
+    "## Pending Questions",
+    "None.",
+    "",
+    "## Final Artifacts / URLs / IDs",
+    "None captured.",
+    "",
+    "## Last Verification",
+    "검증 없음",
+    "",
+    "## Remaining Work",
+    "None.",
+    "",
+    "## Blockers",
+    "None.",
+    "",
+    "## Safety / Do-Not-Do",
+    "None.",
+    "",
+    "## Critical Context",
+    "None captured.",
   ].join("\n");
 }
 
@@ -213,7 +244,8 @@ function hasAskOverlap(summary: string, latestAsk: string | null): boolean {
       overlapCount += 1;
     }
   }
-  const requiredMatches = tokensToCheck.length >= MIN_ASK_OVERLAP_TOKENS_FOR_DOUBLE_MATCH ? 2 : 1;
+  const requiredMatches =
+    tokensToCheck.length >= MIN_ASK_OVERLAP_TOKENS_FOR_DOUBLE_MATCH ? 2 : tokensToCheck.length;
   return overlapCount >= requiredMatches;
 }
 

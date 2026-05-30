@@ -15,7 +15,9 @@ import { resolveStateDir } from "openclaw/plugin-sdk/memory-core-host-runtime-co
 import { getRuntimeConfig } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { pathExists, replaceFileAtomic } from "openclaw/plugin-sdk/security-runtime";
 import {
+  findOrphanTranscriptPaths,
   loadSessionStore,
+  resolveComparableTranscriptPath,
   resolveStorePath,
   updateSessionStore,
 } from "openclaw/plugin-sdk/session-store-runtime";
@@ -697,26 +699,6 @@ export async function appendNarrativeEntry(params: {
 
 // ── Orchestrator ───────────────────────────────────────────────────────
 
-function normalizeComparablePath(pathname: string): string {
-  return process.platform === "win32" ? pathname.toLowerCase() : pathname;
-}
-
-async function normalizeSessionFileForComparison(params: {
-  sessionsDir: string;
-  sessionFile: string;
-}): Promise<string | null> {
-  const trimmed = params.sessionFile.trim();
-  if (!trimmed) {
-    return null;
-  }
-  const resolved = path.isAbsolute(trimmed) ? trimmed : path.resolve(params.sessionsDir, trimmed);
-  try {
-    return normalizeComparablePath(await fs.realpath(resolved));
-  } catch {
-    return normalizeComparablePath(path.resolve(resolved));
-  }
-}
-
 function isDreamingSessionStoreKey(sessionKey: string): boolean {
   const firstSeparator = sessionKey.indexOf(":");
   if (firstSeparator < 0) {
@@ -727,26 +709,36 @@ function isDreamingSessionStoreKey(sessionKey: string): boolean {
   return sessionSegment.startsWith(DREAMING_SESSION_KEY_PREFIX);
 }
 
-async function normalizeSessionEntryPathForComparison(params: {
+async function resolveSessionTranscriptPath(params: {
   sessionsDir: string;
   entry: { sessionFile?: string; sessionId?: string } | undefined;
 }): Promise<string | null> {
   const sessionFile = typeof params.entry?.sessionFile === "string" ? params.entry.sessionFile : "";
   if (sessionFile) {
-    return normalizeSessionFileForComparison({
-      sessionsDir: params.sessionsDir,
-      sessionFile,
-    });
+    const trimmed = sessionFile.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const resolved = path.isAbsolute(trimmed) ? trimmed : path.resolve(params.sessionsDir, trimmed);
+    try {
+      await fs.access(resolved);
+      return resolved;
+    } catch {
+      return null;
+    }
   }
   const sessionId =
     typeof params.entry?.sessionId === "string" ? params.entry.sessionId.trim() : "";
   if (!SAFE_SESSION_ID_RE.test(sessionId)) {
     return null;
   }
-  return normalizeSessionFileForComparison({
-    sessionsDir: params.sessionsDir,
-    sessionFile: `${sessionId}.jsonl`,
-  });
+  const transcriptPath = path.join(params.sessionsDir, `${sessionId}.jsonl`);
+  try {
+    await fs.access(transcriptPath);
+    return transcriptPath;
+  } catch {
+    return null;
+  }
 }
 
 async function scrubDreamingNarrativeArtifacts(logger: Logger): Promise<void> {
@@ -782,17 +774,17 @@ async function scrubDreamingNarrativeArtifacts(logger: Logger): Promise<void> {
     const referencedSessionFiles = new Set<string>();
     let needsStoreUpdate = false;
     for (const [key, entry] of Object.entries(store)) {
-      const normalizedSessionFile = await normalizeSessionEntryPathForComparison({
+      const transcriptPath = await resolveSessionTranscriptPath({
         sessionsDir,
         entry,
       });
-      if (normalizedSessionFile) {
-        referencedSessionFiles.add(normalizedSessionFile);
+      if (transcriptPath) {
+        referencedSessionFiles.add(resolveComparableTranscriptPath(transcriptPath));
       }
       if (!isDreamingSessionStoreKey(key)) {
         continue;
       }
-      if (!normalizedSessionFile || !(await pathExists(normalizedSessionFile))) {
+      if (!transcriptPath || !(await pathExists(transcriptPath))) {
         needsStoreUpdate = true;
       }
     }
@@ -802,17 +794,17 @@ async function scrubDreamingNarrativeArtifacts(logger: Logger): Promise<void> {
       prunedEntries += await updateSessionStore(storePath, async (lockedStore) => {
         let prunedForAgent = 0;
         for (const [key, entry] of Object.entries(lockedStore)) {
-          const normalizedSessionFile = await normalizeSessionEntryPathForComparison({
+          const transcriptPath = await resolveSessionTranscriptPath({
             sessionsDir,
             entry,
           });
-          if (normalizedSessionFile) {
-            referencedSessionFiles.add(normalizedSessionFile);
+          if (transcriptPath) {
+            referencedSessionFiles.add(resolveComparableTranscriptPath(transcriptPath));
           }
           if (!isDreamingSessionStoreKey(key)) {
             continue;
           }
-          if (!normalizedSessionFile || !(await pathExists(normalizedSessionFile))) {
+          if (!transcriptPath || !(await pathExists(transcriptPath))) {
             delete lockedStore[key];
             prunedForAgent += 1;
           }
@@ -821,26 +813,12 @@ async function scrubDreamingNarrativeArtifacts(logger: Logger): Promise<void> {
       });
     }
 
-    let sessionFiles: Dirent[] = [];
-    try {
-      sessionFiles = await fs.readdir(sessionsDir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
+    const orphanCandidates = findOrphanTranscriptPaths({
+      sessionsDir,
+      referencedTranscriptPaths: referencedSessionFiles,
+    });
 
-    for (const fileEntry of sessionFiles) {
-      if (!fileEntry.isFile() || !fileEntry.name.endsWith(".jsonl")) {
-        continue;
-      }
-      const transcriptPath = path.join(sessionsDir, fileEntry.name);
-      const normalizedTranscriptPath =
-        (await normalizeSessionFileForComparison({
-          sessionsDir,
-          sessionFile: fileEntry.name,
-        })) ?? normalizeComparablePath(transcriptPath);
-      if (referencedSessionFiles.has(normalizedTranscriptPath)) {
-        continue;
-      }
+    for (const transcriptPath of orphanCandidates) {
       let stat;
       try {
         stat = await fs.stat(transcriptPath);

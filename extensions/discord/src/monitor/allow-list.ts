@@ -33,6 +33,7 @@ type DiscordChannelOverrideConfig = {
   systemPrompt?: string;
   includeThreadStarter?: boolean;
   autoThread?: boolean;
+  autoThreadMode?: "always" | "classifier";
   autoThreadName?: "message" | "generated";
   autoArchiveDuration?: "60" | "1440" | "4320" | "10080" | 60 | 1440 | 4320 | 10080;
 };
@@ -419,6 +420,7 @@ function resolveDiscordChannelConfigEntry(
     systemPrompt: entry.systemPrompt,
     includeThreadStarter: entry.includeThreadStarter,
     autoThread: entry.autoThread,
+    autoThreadMode: entry.autoThreadMode,
     autoThreadName: entry.autoThreadName,
     autoArchiveDuration: entry.autoArchiveDuration,
   };

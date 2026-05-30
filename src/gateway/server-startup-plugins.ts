@@ -62,8 +62,15 @@ export async function prepareGatewayPluginBootstrap(params: {
     ];
     if (!params.minimalTestGateway) {
       const { runStartupSessionMigration } = await import("./server-startup-session-migration.js");
+      const { runStartupOrphanTranscriptCleanup } =
+        await import("./server-startup-orphan-transcript-cleanup.js");
       startupTasks.push(
         runStartupSessionMigration({
+          cfg: params.cfgAtStart,
+          env: process.env,
+          log: params.log,
+        }),
+        runStartupOrphanTranscriptCleanup({
           cfg: params.cfgAtStart,
           env: process.env,
           log: params.log,

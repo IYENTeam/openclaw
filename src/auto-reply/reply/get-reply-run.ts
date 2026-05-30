@@ -696,7 +696,12 @@ export async function runPreparedReply(
     const thinkingCatalog = maybeLevel ? await modelState.resolveThinkingCatalog() : undefined;
     if (
       maybeLevel &&
-      isThinkingLevelSupported({ provider, model, level: maybeLevel, catalog: thinkingCatalog })
+      isThinkingLevelSupported({
+        provider,
+        model,
+        level: maybeLevel,
+        catalog: thinkingCatalog,
+      })
     ) {
       resolvedThinkLevel = maybeLevel;
       prefixedBodyBase = parts.slice(1).join(" ").trim();
@@ -817,7 +822,10 @@ export async function runPreparedReply(
     }
   }
   const sessionIdFinal = sessionId ?? crypto.randomUUID();
-  const sessionFilePathOptions = resolveSessionFilePathOptions({ agentId, storePath });
+  const sessionFilePathOptions = resolveSessionFilePathOptions({
+    agentId,
+    storePath,
+  });
   const resolvePreparedSessionState = (): {
     sessionEntry: SessionEntry | undefined;
     sessionId: string;
@@ -921,7 +929,11 @@ export async function runPreparedReply(
   const resolveQueueBusyState = () => {
     const activeSessionId = resolveActiveQueueSessionId();
     if (!activeSessionId || !piRuntime) {
-      return { activeSessionId: undefined, isActive: false, isStreaming: false };
+      return {
+        activeSessionId: undefined,
+        isActive: false,
+        isStreaming: false,
+      };
     }
     return {
       activeSessionId,
@@ -1121,6 +1133,7 @@ export async function runPreparedReply(
     storePath,
     defaultModel,
     agentCfgContextTokens: agentCfg?.contextTokens,
+    agentDefaults: agentCfg,
     resolvedVerboseLevel: resolvedVerboseLevel ?? "off",
     toolProgressDetail:
       normalizeToolProgressDetail(agentCfg?.toolProgressDetail) ??

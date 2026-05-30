@@ -349,7 +349,7 @@ describe("compaction-safeguard summary budgets", () => {
   });
 
   it("keeps section separator when body ends without newline (e.g. buildStructuredFallbackSummary)", () => {
-    const bodyNoNewline = "## Exact identifiers\nNone.";
+    const bodyNoNewline = "## Critical Context\nNone.";
     const suffixNoLeadingNewline = "## Tool Failures\n- exec: failed";
 
     const capped = capCompactionSummaryPreservingSuffix(
@@ -362,12 +362,12 @@ describe("compaction-safeguard summary budgets", () => {
   });
 
   it("keeps body prefix when truncation marker cannot fit (tiny budget)", () => {
-    const body = "## Decisions\nKeep flow.\n## Constraints\nFollow rules.";
+    const body = "## Active Task\nKeep flow.\n## Constraints\nFollow rules.";
     const tinyBudget = 10; // Smaller than SUMMARY_TRUNCATED_MARKER.length
     const capped = capCompactionSummary(body, tinyBudget);
 
     expect(capped.length).toBeLessThanOrEqual(tinyBudget);
-    expect(capped).toContain("## Decis");
+    expect(capped).toContain("## Active");
     expect(capped).not.toContain("[Compaction summary truncated");
   });
 
@@ -738,6 +738,55 @@ describe("compaction-safeguard recent-turn preservation", () => {
     expect(section).toContain("- User: recent ask");
   });
 
+  it("keeps a partially completed recent tool loop together when preserving recent turns", () => {
+    const split = splitPreservedRecentTurns({
+      messages: [
+        { role: "user", content: "older ask", timestamp: 1 },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "older answer" }],
+          timestamp: 2,
+        } as unknown as AgentMessage,
+        {
+          role: "assistant",
+          content: [{ type: "toolCall", id: "call_recent", name: "read", arguments: {} }],
+          timestamp: 3,
+        } as unknown as AgentMessage,
+        {
+          role: "toolResult",
+          toolCallId: "call_recent",
+          toolName: "read",
+          content: [{ type: "text", text: "recent tool result" }],
+          timestamp: 4,
+        } as unknown as AgentMessage,
+        { role: "user", content: "recent ask", timestamp: 5 },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "starting next tool loop" }],
+          timestamp: 6,
+        } as unknown as AgentMessage,
+        {
+          role: "assistant",
+          content: [{ type: "toolCall", id: "call_pending", name: "write", arguments: {} }],
+          timestamp: 7,
+        } as unknown as AgentMessage,
+      ],
+      recentTurnsPreserve: 1,
+    });
+
+    expect(split.summarizableMessages.map((msg) => msg.role)).toEqual(["user", "assistant"]);
+    expect(split.preservedMessages.map((msg) => msg.role)).toEqual([
+      "assistant",
+      "toolResult",
+      "user",
+      "assistant",
+      "assistant",
+    ]);
+    const section = formatPreservedTurnsSection(split.preservedMessages);
+    expect(section).toContain("- Assistant: [non-text content: toolCall]");
+    expect(section).toContain("- Tool result (read): recent tool result");
+  });
+
   it("formats preserved non-text messages with placeholders", () => {
     const section = formatPreservedTurnsSection([
       {
@@ -861,7 +910,7 @@ describe("compaction-safeguard recent-turn preservation", () => {
   });
 
   it("clamps preserve count into a safe range", () => {
-    expect(resolveRecentTurnsPreserve(undefined)).toBe(3);
+    expect(resolveRecentTurnsPreserve(undefined)).toBe(6);
     expect(resolveRecentTurnsPreserve(-1)).toBe(0);
     expect(resolveRecentTurnsPreserve(99)).toBe(12);
   });
@@ -874,15 +923,27 @@ describe("compaction-safeguard recent-turn preservation", () => {
     expect(identifiers).toContain("A1B2C3D4E5F6"); // pragma: allowlist secret
 
     const summary = [
-      "## Decisions",
+      "## Active Task",
       "Keep current flow.",
-      "## Open TODOs",
+      "## Completed Actions",
       "None.",
-      "## Constraints/Rules",
+      "## Key Decisions",
       "Preserve identifiers.",
-      "## Pending user asks",
-      "Explain post-compaction behavior.",
-      "## Exact identifiers",
+      "## Resolved Questions",
+      "None.",
+      "## Pending Questions",
+      "None.",
+      "## Final Artifacts / URLs / IDs",
+      identifiers.join(", "),
+      "## Last Verification",
+      "검증 없음",
+      "## Remaining Work",
+      "Explain post-compaction behavior for memory indexing.",
+      "## Blockers",
+      "None.",
+      "## Safety / Do-Not-Do",
+      "None.",
+      "## Critical Context",
       identifiers.join(", "),
     ].join("\n");
 
@@ -943,14 +1004,14 @@ describe("compaction-safeguard recent-turn preservation", () => {
   it("requires exact section headings instead of substring matches", () => {
     const quality = auditSummaryQuality({
       summary: [
-        "See ## Decisions above.",
-        "## Open TODOs",
+        "See ## Active Task above.",
+        "## Completed Actions",
         "None.",
-        "## Constraints/Rules",
+        "## Key Decisions",
         "Keep policy.",
-        "## Pending user asks",
+        "## Remaining Work",
         "Need status.",
-        "## Exact identifiers",
+        "## Critical Context",
         "abc12345",
       ].join("\n"),
       identifiers: ["abc12345"],
@@ -958,21 +1019,33 @@ describe("compaction-safeguard recent-turn preservation", () => {
     });
 
     expect(quality.ok).toBe(false);
-    expect(quality.reasons).toContain("missing_section:## Decisions");
+    expect(quality.reasons).toContain("missing_section:## Active Task");
   });
 
   it("does not enforce identifier retention when policy is off", () => {
     const quality = auditSummaryQuality({
       summary: [
-        "## Decisions",
+        "## Active Task",
         "Use redacted summary.",
-        "## Open TODOs",
+        "## Completed Actions",
         "None.",
-        "## Constraints/Rules",
+        "## Key Decisions",
         "No sensitive identifiers.",
-        "## Pending user asks",
+        "## Resolved Questions",
+        "None.",
+        "## Pending Questions",
+        "None.",
+        "## Final Artifacts / URLs / IDs",
+        "None captured.",
+        "## Last Verification",
+        "검증 없음",
+        "## Remaining Work",
         "Provide status.",
-        "## Exact identifiers",
+        "## Blockers",
+        "None.",
+        "## Safety / Do-Not-Do",
+        "None.",
+        "## Critical Context",
         "Redacted.",
       ].join("\n"),
       identifiers: ["sensitive-token-123456"],
@@ -986,15 +1059,27 @@ describe("compaction-safeguard recent-turn preservation", () => {
   it("does not force strict identifier retention for custom policy", () => {
     const quality = auditSummaryQuality({
       summary: [
-        "## Decisions",
+        "## Active Task",
         "Mask secrets by default.",
-        "## Open TODOs",
+        "## Completed Actions",
         "None.",
-        "## Constraints/Rules",
+        "## Key Decisions",
         "Follow custom policy.",
-        "## Pending user asks",
+        "## Resolved Questions",
+        "None.",
+        "## Pending Questions",
+        "None.",
+        "## Final Artifacts / URLs / IDs",
+        "None captured.",
+        "## Last Verification",
+        "검증 없음",
+        "## Remaining Work",
         "Share summary.",
-        "## Exact identifiers",
+        "## Blockers",
+        "None.",
+        "## Safety / Do-Not-Do",
+        "None.",
+        "## Critical Context",
         "Masked by policy.",
       ].join("\n"),
       identifiers: ["api-key-abcdef123456"],
@@ -1008,15 +1093,27 @@ describe("compaction-safeguard recent-turn preservation", () => {
   it("matches pure-hex identifiers case-insensitively in retention checks", () => {
     const quality = auditSummaryQuality({
       summary: [
-        "## Decisions",
+        "## Active Task",
         "Keep current flow.",
-        "## Open TODOs",
+        "## Completed Actions",
         "None.",
-        "## Constraints/Rules",
+        "## Key Decisions",
         "Preserve hex IDs.",
-        "## Pending user asks",
+        "## Resolved Questions",
+        "None.",
+        "## Pending Questions",
+        "None.",
+        "## Final Artifacts / URLs / IDs",
+        "None captured.",
+        "## Last Verification",
+        "검증 없음",
+        "## Remaining Work",
         "Provide status.",
-        "## Exact identifiers",
+        "## Blockers",
+        "None.",
+        "## Safety / Do-Not-Do",
+        "None.",
+        "## Critical Context",
         "a1b2c3d4e5f6", // pragma: allowlist secret
       ].join("\n"),
       identifiers: ["A1B2C3D4E5F6"], // pragma: allowlist secret
@@ -1030,15 +1127,27 @@ describe("compaction-safeguard recent-turn preservation", () => {
   it("flags missing non-latin latest asks when summary omits them", () => {
     const quality = auditSummaryQuality({
       summary: [
-        "## Decisions",
+        "## Active Task",
         "Keep current flow.",
-        "## Open TODOs",
+        "## Completed Actions",
         "None.",
-        "## Constraints/Rules",
+        "## Key Decisions",
         "Preserve safety checks.",
-        "## Pending user asks",
+        "## Resolved Questions",
+        "None.",
+        "## Pending Questions",
+        "None.",
+        "## Final Artifacts / URLs / IDs",
+        "None captured.",
+        "## Last Verification",
+        "검증 없음",
+        "## Remaining Work",
         "No pending asks.",
-        "## Exact identifiers",
+        "## Blockers",
+        "None.",
+        "## Safety / Do-Not-Do",
+        "None.",
+        "## Critical Context",
         "None.",
       ].join("\n"),
       identifiers: [],
@@ -1052,15 +1161,27 @@ describe("compaction-safeguard recent-turn preservation", () => {
   it("accepts non-latin latest asks when summary reflects a shorter cjk phrase", () => {
     const quality = auditSummaryQuality({
       summary: [
-        "## Decisions",
+        "## Active Task",
         "Keep current flow.",
-        "## Open TODOs",
+        "## Completed Actions",
         "None.",
-        "## Constraints/Rules",
+        "## Key Decisions",
         "Preserve safety checks.",
-        "## Pending user asks",
+        "## Resolved Questions",
+        "None.",
+        "## Pending Questions",
+        "None.",
+        "## Final Artifacts / URLs / IDs",
+        "None captured.",
+        "## Last Verification",
+        "검증 없음",
+        "## Remaining Work",
         "状态更新 pending.",
-        "## Exact identifiers",
+        "## Blockers",
+        "None.",
+        "## Safety / Do-Not-Do",
+        "None.",
+        "## Critical Context",
         "None.",
       ].join("\n"),
       identifiers: [],
@@ -1073,15 +1194,15 @@ describe("compaction-safeguard recent-turn preservation", () => {
   it("rejects latest-ask overlap when only stopwords overlap", () => {
     const quality = auditSummaryQuality({
       summary: [
-        "## Decisions",
+        "## Active Task",
         "Keep current flow.",
-        "## Open TODOs",
+        "## Completed Actions",
         "None.",
-        "## Constraints/Rules",
+        "## Key Decisions",
         "Follow policy.",
-        "## Pending user asks",
+        "## Remaining Work",
         "This is to track active asks.",
-        "## Exact identifiers",
+        "## Critical Context",
         "None.",
       ].join("\n"),
       identifiers: [],
@@ -1095,15 +1216,15 @@ describe("compaction-safeguard recent-turn preservation", () => {
   it("requires more than one meaningful overlap token for detailed asks", () => {
     const quality = auditSummaryQuality({
       summary: [
-        "## Decisions",
+        "## Active Task",
         "Keep current flow.",
-        "## Open TODOs",
+        "## Completed Actions",
         "None.",
-        "## Constraints/Rules",
+        "## Key Decisions",
         "Follow policy.",
-        "## Pending user asks",
+        "## Remaining Work",
         "Password issue tracked.",
-        "## Exact identifiers",
+        "## Critical Context",
         "None.",
       ].join("\n"),
       identifiers: [],
@@ -1122,11 +1243,11 @@ describe("compaction-safeguard recent-turn preservation", () => {
 
   it("builds structured instructions with required sections", () => {
     const instructions = buildCompactionStructureInstructions("Keep security caveats.");
-    expect(instructions).toContain("## Decisions");
-    expect(instructions).toContain("## Open TODOs");
-    expect(instructions).toContain("## Constraints/Rules");
-    expect(instructions).toContain("## Pending user asks");
-    expect(instructions).toContain("## Exact identifiers");
+    expect(instructions).toContain("## Active Task");
+    expect(instructions).toContain("## Completed Actions");
+    expect(instructions).toContain("## Key Decisions");
+    expect(instructions).toContain("## Remaining Work");
+    expect(instructions).toContain("## Critical Context");
     expect(instructions).toContain("Keep security caveats.");
     expect(instructions).not.toContain("Additional focus:");
     expect(instructions).toContain("<untrusted-text>");
@@ -1136,7 +1257,7 @@ describe("compaction-safeguard recent-turn preservation", () => {
     const instructions = buildCompactionStructureInstructions(undefined, {
       identifierPolicy: "off",
     });
-    expect(instructions).toContain("## Exact identifiers");
+    expect(instructions).toContain("## Critical Context");
     expect(instructions).toContain("do not enforce literal-preservation rules");
     expect(instructions).not.toContain("preserve literal values exactly as seen");
     expect(instructions).not.toContain("N/A (identifier policy off)");
@@ -1147,7 +1268,7 @@ describe("compaction-safeguard recent-turn preservation", () => {
       identifierPolicy: "custom",
       identifierInstructions: "Exclude secrets and one-time tokens from summaries.",
     });
-    expect(instructions).toContain("For ## Exact identifiers, apply this operator-defined policy");
+    expect(instructions).toContain("For ## Critical Context, apply this operator-defined policy");
     expect(instructions).toContain("Exclude secrets and one-time tokens from summaries.");
     expect(instructions).toContain("<untrusted-text>");
   });
@@ -1171,29 +1292,47 @@ describe("compaction-safeguard recent-turn preservation", () => {
 
   it("builds a structured fallback summary from legacy previous summary text", () => {
     const summary = buildStructuredFallbackSummary("legacy summary without headings");
-    expect(summary).toContain("## Decisions");
-    expect(summary).toContain("## Open TODOs");
-    expect(summary).toContain("## Constraints/Rules");
-    expect(summary).toContain("## Pending user asks");
-    expect(summary).toContain("## Exact identifiers");
+    expect(summary).toContain("## Active Task");
+    expect(summary).toContain("## Completed Actions");
+    expect(summary).toContain("## Key Decisions");
+    expect(summary).toContain("## Remaining Work");
+    expect(summary).toContain("## Critical Context");
     expect(summary).toContain("legacy summary without headings");
   });
 
   it("preserves an already-structured previous summary as-is", () => {
     const structured = [
-      "## Decisions",
+      "## Active Task",
       "done",
       "",
-      "## Open TODOs",
+      "## Completed Actions",
       "todo",
       "",
-      "## Constraints/Rules",
+      "## Key Decisions",
       "rules",
       "",
-      "## Pending user asks",
+      "## Resolved Questions",
+      "answers",
+      "",
+      "## Pending Questions",
+      "questions",
+      "",
+      "## Final Artifacts / URLs / IDs",
+      "artifacts",
+      "",
+      "## Last Verification",
+      "tests passed",
+      "",
+      "## Remaining Work",
       "asks",
       "",
-      "## Exact identifiers",
+      "## Blockers",
+      "none",
+      "",
+      "## Safety / Do-Not-Do",
+      "safe",
+      "",
+      "## Critical Context",
       "ids",
     ].join("\n");
     expect(buildStructuredFallbackSummary(structured)).toBe(structured);
@@ -1215,31 +1354,49 @@ describe("compaction-safeguard recent-turn preservation", () => {
 
   it("restructures summaries with near-match headings instead of reusing them", () => {
     const nearMatch = [
-      "## Decisions",
+      "## Active Task",
       "done",
       "",
-      "## Open TODOs (active)",
+      "## Completed Actions (active)",
       "todo",
       "",
-      "## Constraints/Rules",
+      "## Key Decisions",
       "rules",
       "",
-      "## Pending user asks",
+      "## Resolved Questions",
+      "answers",
+      "",
+      "## Pending Questions",
+      "questions",
+      "",
+      "## Final Artifacts / URLs / IDs",
+      "artifacts",
+      "",
+      "## Last Verification",
+      "tests passed",
+      "",
+      "## Remaining Work",
       "asks",
       "",
-      "## Exact identifiers",
+      "## Blockers",
+      "none",
+      "",
+      "## Safety / Do-Not-Do",
+      "safe",
+      "",
+      "## Critical Context",
       "ids",
     ].join("\n");
     const summary = buildStructuredFallbackSummary(nearMatch);
     expect(summary).not.toBe(nearMatch);
-    expect(summary).toContain("\n## Open TODOs\n");
+    expect(summary).toContain("\n## Completed Actions\n");
   });
 
   it("does not force policy-off marker in fallback exact identifiers section", () => {
     const summary = buildStructuredFallbackSummary(undefined, {
       identifierPolicy: "off",
     });
-    expect(summary).toContain("## Exact identifiers");
+    expect(summary).toContain("## Critical Context");
     expect(summary).toContain("None captured.");
     expect(summary).not.toContain("N/A (identifier policy off).");
   });
@@ -1297,7 +1454,7 @@ describe("compaction-safeguard recent-turn preservation", () => {
     expect(droppedCall?.customInstructions).toContain(
       "Produce a compact, factual summary with these exact section headings:",
     );
-    expect(droppedCall?.customInstructions).toContain("## Decisions");
+    expect(droppedCall?.customInstructions).toContain("## Active Task");
     expect(droppedCall?.customInstructions).toContain("Keep security caveats.");
   });
 
@@ -1401,15 +1558,27 @@ describe("compaction-safeguard recent-turn preservation", () => {
       .mockResolvedValueOnce("latest ask status")
       .mockResolvedValueOnce(
         [
-          "## Decisions",
+          "## Active Task",
           "Keep current flow.",
-          "## Open TODOs",
+          "## Completed Actions",
           "None.",
-          "## Constraints/Rules",
+          "## Key Decisions",
           "Follow rules.",
-          "## Pending user asks",
+          "## Resolved Questions",
+          "None.",
+          "## Pending Questions",
+          "None.",
+          "## Final Artifacts / URLs / IDs",
+          "None captured.",
+          "## Last Verification",
+          "검증 없음",
+          "## Remaining Work",
           "latest ask status",
-          "## Exact identifiers",
+          "## Blockers",
+          "None.",
+          "## Safety / Do-Not-Do",
+          "None.",
+          "## Critical Context",
           "None.",
         ].join("\n"),
       );
@@ -1448,15 +1617,15 @@ describe("compaction-safeguard recent-turn preservation", () => {
               {
                 type: "text",
                 text: [
-                  "## Decisions",
+                  "## Active Task",
                   "from preserved turns",
-                  "## Open TODOs",
+                  "## Completed Actions",
                   "from preserved turns",
-                  "## Constraints/Rules",
+                  "## Key Decisions",
                   "from preserved turns",
-                  "## Pending user asks",
+                  "## Remaining Work",
                   "from preserved turns",
-                  "## Exact identifiers",
+                  "## Critical Context",
                   "from preserved turns",
                 ].join("\n"),
               },
@@ -1489,7 +1658,7 @@ describe("compaction-safeguard recent-turn preservation", () => {
     expect(mockSummarizeInStages).toHaveBeenCalledTimes(2);
     const secondCall = mockSummarizeInStages.mock.calls[1]?.[0];
     expect(secondCall?.customInstructions).toContain("Quality check feedback");
-    expect(secondCall?.customInstructions).toContain("missing_section:## Decisions");
+    expect(secondCall?.customInstructions).toContain("missing_section:## Active Task");
   });
 
   it("does not treat preserved latest asks as satisfying overlap checks", async () => {
@@ -1497,29 +1666,53 @@ describe("compaction-safeguard recent-turn preservation", () => {
     mockSummarizeInStages
       .mockResolvedValueOnce(
         [
-          "## Decisions",
+          "## Active Task",
           "Keep current flow.",
-          "## Open TODOs",
+          "## Completed Actions",
           "None.",
-          "## Constraints/Rules",
+          "## Key Decisions",
           "Follow rules.",
-          "## Pending user asks",
+          "## Resolved Questions",
+          "None.",
+          "## Pending Questions",
+          "None.",
+          "## Final Artifacts / URLs / IDs",
+          "None captured.",
+          "## Last Verification",
+          "검증 없음",
+          "## Remaining Work",
           "latest ask status",
-          "## Exact identifiers",
+          "## Blockers",
+          "None.",
+          "## Safety / Do-Not-Do",
+          "None.",
+          "## Critical Context",
           "None.",
         ].join("\n"),
       )
       .mockResolvedValueOnce(
         [
-          "## Decisions",
+          "## Active Task",
           "Keep current flow.",
-          "## Open TODOs",
+          "## Completed Actions",
           "None.",
-          "## Constraints/Rules",
+          "## Key Decisions",
           "Follow rules.",
-          "## Pending user asks",
+          "## Resolved Questions",
+          "None.",
+          "## Pending Questions",
+          "None.",
+          "## Final Artifacts / URLs / IDs",
+          "None captured.",
+          "## Last Verification",
+          "검증 없음",
+          "## Remaining Work",
           "older context",
-          "## Exact identifiers",
+          "## Blockers",
+          "None.",
+          "## Safety / Do-Not-Do",
+          "None.",
+          "## Critical Context",
           "None.",
         ].join("\n"),
       );
@@ -1699,11 +1892,11 @@ describe("compaction-safeguard recent-turn preservation", () => {
     expect(result.cancel).not.toBe(true);
     expect(mockSummarizeInStages).not.toHaveBeenCalled();
     const summary = result.compaction?.summary ?? "";
-    expect(summary).toContain("## Decisions");
-    expect(summary).toContain("## Open TODOs");
-    expect(summary).toContain("## Constraints/Rules");
-    expect(summary).toContain("## Pending user asks");
-    expect(summary).toContain("## Exact identifiers");
+    expect(summary).toContain("## Active Task");
+    expect(summary).toContain("## Completed Actions");
+    expect(summary).toContain("## Key Decisions");
+    expect(summary).toContain("## Remaining Work");
+    expect(summary).toContain("## Critical Context");
     expect(summary).toContain("legacy summary without headings");
   });
 
@@ -1711,15 +1904,27 @@ describe("compaction-safeguard recent-turn preservation", () => {
     mockSummarizeInStages.mockReset();
     mockSummarizeInStages.mockResolvedValue(
       [
-        "## Decisions",
+        "## Active Task",
         "Condensed prior context with latest status.",
-        "## Open TODOs",
+        "## Completed Actions",
         "None.",
-        "## Constraints/Rules",
+        "## Key Decisions",
         "Preserve identifiers.",
-        "## Pending user asks",
+        "## Resolved Questions",
+        "None.",
+        "## Pending Questions",
+        "None.",
+        "## Final Artifacts / URLs / IDs",
+        "None captured.",
+        "## Last Verification",
+        "검증 없음",
+        "## Remaining Work",
         "latest ask status",
-        "## Exact identifiers",
+        "## Blockers",
+        "None.",
+        "## Safety / Do-Not-Do",
+        "None.",
+        "## Critical Context",
         "None.",
       ].join("\n"),
     );
@@ -1930,9 +2135,9 @@ describe("compaction-safeguard double-compaction guard", () => {
     // After fix for #41981: returns a compaction result (not cancel) to write
     // a boundary entry and break the re-trigger loop.
     // buildStructuredFallbackSummary(undefined) produces a minimal structured summary
-    expect(compaction.summary).toContain("## Decisions");
+    expect(compaction.summary).toContain("## Active Task");
     expect(compaction.summary).toContain("No prior history.");
-    expect(compaction.summary).toContain("## Open TODOs");
+    expect(compaction.summary).toContain("## Completed Actions");
     expect(compaction.firstKeptEntryId).toBe("entry-1");
     expect(compaction.tokensBefore).toBe(1500);
     expect(getApiKeyAndHeadersMock).not.toHaveBeenCalled();
@@ -1949,7 +2154,7 @@ describe("compaction-safeguard double-compaction guard", () => {
         turnPrefixMessages: [] as AgentMessage[],
         firstKeptEntryId: "entry-2",
         tokensBefore: 2000,
-        previousSummary: "## Decisions\nUsed approach A.",
+        previousSummary: "## Active Task\nUsed approach A.",
         fileOps: { read: [], edited: [], written: [] },
         settings: { reserveTokens: 16384 },
       },
@@ -1962,9 +2167,9 @@ describe("compaction-safeguard double-compaction guard", () => {
       apiKey: "sk-test", // pragma: allowlist secret
     });
     const compaction = expectCompactionResult(result);
-    // Fallback preserves previous summary when it has required sections
-    expect(compaction.summary).toContain("## Decisions");
-    expect(compaction.summary).toContain("## Open TODOs");
+    // Fallback preserves/restructures previous summary with required sections
+    expect(compaction.summary).toContain("## Active Task");
+    expect(compaction.summary).toContain("## Completed Actions");
     expect(compaction.firstKeptEntryId).toBe("entry-2");
   });
 
@@ -1992,7 +2197,7 @@ describe("compaction-safeguard double-compaction guard", () => {
       apiKey: "sk-test", // pragma: allowlist secret
     });
     const compaction1 = expectCompactionResult(result1);
-    expect(compaction1.summary).toContain("## Decisions");
+    expect(compaction1.summary).toContain("## Active Task");
 
     // Simulate: after the boundary, a new assistant message arrives, SDK
     // triggers compaction again with another empty preparation. The safeguard
@@ -2004,7 +2209,7 @@ describe("compaction-safeguard double-compaction guard", () => {
       apiKey: "sk-test", // pragma: allowlist secret
     });
     const compaction2 = expectCompactionResult(result2);
-    expect(compaction2.summary).toContain("## Decisions");
+    expect(compaction2.summary).toContain("## Active Task");
     expect(compaction2.firstKeptEntryId).toBe("entry-3");
   });
 

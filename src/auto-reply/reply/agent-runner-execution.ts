@@ -749,15 +749,19 @@ function resolveHeartbeatBleedHint(params: {
 
 export function buildContextOverflowRecoveryText(params: {
   duringCompaction?: boolean;
+  resetConversation?: boolean;
   cfg: FollowupRun["run"]["config"];
   agentId?: string;
   primaryProvider?: string;
   primaryModel?: string;
   activeSessionEntry?: SessionEntry;
 }): string {
-  const prefix = params.duringCompaction
-    ? "⚠️ Context limit exceeded during compaction. I've reset our conversation to start fresh - please try again."
-    : "⚠️ Context limit exceeded. I've reset our conversation to start fresh - please try again.";
+  const resetConversation = params.resetConversation !== false;
+  const prefix = resetConversation
+    ? params.duringCompaction
+      ? "⚠️ Context limit exceeded during compaction. I've reset our conversation to start fresh - please try again."
+      : "⚠️ Context limit exceeded. I've reset our conversation to start fresh - please try again."
+    : "⚠️ Context limit exceeded. This conversation is too large to continue safely. Use /new to start a fresh session, then retry with a shorter prompt.";
   return (
     prefix +
     (resolveHeartbeatBleedHint({
@@ -1926,12 +1930,31 @@ export async function runAgentTurnWithFallback(params: {
           }))
         : [];
 
-      // Some embedded runs surface context overflow as an error payload instead of throwing.
-      // Treat those as a session-level failure and auto-recover by starting a fresh session.
+      // Some embedded runs surface terminal recovery failures as an error payload instead
+      // of throwing. Context overflow means the embedded runner already exhausted its
+      // bounded compaction/truncation attempts, so starting a fresh session and replaying
+      // the same queued prompt can re-enter the same compaction loop.
       const embeddedError = runResult.meta?.error;
+      if (embeddedError?.kind === "context_overflow") {
+        params.replyOperation?.fail("run_failed", embeddedError);
+        return {
+          kind: "final",
+          payload: markAgentRunFailureReplyPayload({
+            text: buildContextOverflowRecoveryText({
+              resetConversation: false,
+              cfg: runtimeConfig,
+              agentId: params.followupRun.run.agentId,
+              primaryProvider: params.followupRun.run.provider,
+              primaryModel: params.followupRun.run.model,
+              activeSessionEntry: params.getActiveSessionEntry(),
+            }),
+          }),
+        };
+      }
       if (
         embeddedError &&
-        isContextOverflowError(embeddedError.message) &&
+        embeddedError.kind === "compaction_failure" &&
+        isCompactionFailureError(embeddedError.message) &&
         !didResetAfterCompactionFailure &&
         (await params.resetSessionAfterCompactionFailure(embeddedError.message))
       ) {
@@ -1941,6 +1964,7 @@ export async function runAgentTurnWithFallback(params: {
           kind: "final",
           payload: markAgentRunFailureReplyPayload({
             text: buildContextOverflowRecoveryText({
+              duringCompaction: true,
               cfg: runtimeConfig,
               agentId: params.followupRun.run.agentId,
               primaryProvider: params.followupRun.run.provider,

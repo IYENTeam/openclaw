@@ -21,6 +21,8 @@ const state = vi.hoisted(() => ({
   runWithModelFallbackMock: vi.fn(),
   isCliProviderMock: vi.fn((_: unknown) => false),
   isInternalMessageChannelMock: vi.fn((_: unknown) => false),
+  isCompactionFailureErrorMock: vi.fn((_: string) => false),
+  isContextOverflowErrorMock: vi.fn((_: string) => false),
   createBlockReplyDeliveryHandlerMock: vi.fn(),
 }));
 
@@ -84,8 +86,8 @@ vi.mock("../../agents/pi-embedded-helpers.js", () => ({
     }
     return undefined;
   },
-  isCompactionFailureError: () => false,
-  isContextOverflowError: () => false,
+  isCompactionFailureError: (message: string) => state.isCompactionFailureErrorMock(message),
+  isContextOverflowError: (message: string) => state.isContextOverflowErrorMock(message),
   isBillingErrorMessage: () => false,
   isLikelyContextOverflowError: () => false,
   isOverloadedErrorMessage: (message: string) => /overloaded|capacity/i.test(message),
@@ -400,6 +402,10 @@ describe("runAgentTurnWithFallback", () => {
     state.isCliProviderMock.mockReturnValue(false);
     state.isInternalMessageChannelMock.mockReset();
     state.isInternalMessageChannelMock.mockReturnValue(false);
+    state.isCompactionFailureErrorMock.mockReset();
+    state.isCompactionFailureErrorMock.mockReturnValue(false);
+    state.isContextOverflowErrorMock.mockReset();
+    state.isContextOverflowErrorMock.mockReturnValue(false);
     state.createBlockReplyDeliveryHandlerMock.mockReset();
     state.createBlockReplyDeliveryHandlerMock.mockReturnValue(undefined);
     state.runWithModelFallbackMock.mockImplementation(async (params: FallbackRunnerParams) => ({
@@ -412,6 +418,79 @@ describe("runAgentTurnWithFallback", () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("does not reset the session after embedded context-overflow recovery is exhausted", async () => {
+    state.isContextOverflowErrorMock.mockReturnValue(true);
+    state.runEmbeddedPiAgentMock.mockResolvedValueOnce({
+      payloads: [{ text: "Context overflow: prompt too large for the model.", isError: true }],
+      meta: {
+        durationMs: 1,
+        error: {
+          kind: "context_overflow",
+          message:
+            "Context overflow: estimated context size exceeds safe threshold during tool loop.",
+        },
+      },
+    });
+    const resetSessionAfterCompactionFailure = vi.fn(async () => true);
+    const { replyOperation, failMock } = createMockReplyOperation();
+
+    const runAgentTurnWithFallback = await getRunAgentTurnWithFallback();
+    const result = await runAgentTurnWithFallback({
+      ...createMinimalRunAgentTurnParams(),
+      replyOperation,
+      resetSessionAfterCompactionFailure,
+    });
+
+    expect(result.kind).toBe("final");
+    expect(resetSessionAfterCompactionFailure).not.toHaveBeenCalled();
+    expect(failMock).toHaveBeenCalledWith(
+      "run_failed",
+      expect.objectContaining({ kind: "context_overflow" }),
+    );
+    if (result.kind === "final") {
+      expect(result.payload.text).toContain("too large to continue safely");
+      expect(result.payload.text).not.toContain("I've reset");
+      expect(result.payload.text).toContain("/new");
+    }
+  });
+
+  it("still resets once when an embedded run reports a compaction failure", async () => {
+    state.isCompactionFailureErrorMock.mockReturnValue(true);
+    state.runEmbeddedPiAgentMock.mockResolvedValueOnce({
+      payloads: [{ text: "Compaction failed.", isError: true }],
+      meta: {
+        durationMs: 1,
+        error: {
+          kind: "compaction_failure",
+          message: 'Summarization failed: 400 {"message":"prompt is too long"}',
+        },
+      },
+    });
+    const resetSessionAfterCompactionFailure = vi.fn(async () => true);
+    const { replyOperation, failMock } = createMockReplyOperation();
+
+    const runAgentTurnWithFallback = await getRunAgentTurnWithFallback();
+    const result = await runAgentTurnWithFallback({
+      ...createMinimalRunAgentTurnParams(),
+      replyOperation,
+      resetSessionAfterCompactionFailure,
+    });
+
+    expect(result.kind).toBe("final");
+    expect(resetSessionAfterCompactionFailure).toHaveBeenCalledTimes(1);
+    expect(resetSessionAfterCompactionFailure).toHaveBeenCalledWith(
+      'Summarization failed: 400 {"message":"prompt is too long"}',
+    );
+    expect(failMock).toHaveBeenCalledWith(
+      "run_failed",
+      expect.objectContaining({ kind: "compaction_failure" }),
+    );
+    if (result.kind === "final") {
+      expect(result.payload.text).toContain("I've reset");
+      expect(result.payload.text).toContain("during compaction");
+    }
   });
 
   it("forwards the static extra system prompt to CLI backends", async () => {

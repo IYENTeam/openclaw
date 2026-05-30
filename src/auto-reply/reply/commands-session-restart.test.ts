@@ -176,6 +176,30 @@ describe("handleRestartCommand", () => {
     }
   });
 
+  it("blocks Discord restart commands before emitting a gateway restart", async () => {
+    const result = await handleRestartCommand(
+      restartCommandParams({
+        command: {
+          ...restartCommandParams().command,
+          surface: "discord",
+          channel: "discord",
+        },
+        ctx: {
+          Surface: "discord",
+          Provider: "discord",
+        },
+        isGroup: true,
+      }),
+      true,
+    );
+
+    expect(result?.shouldContinue).toBe(false);
+    expect(result?.reply?.text).toContain("blocked from Discord sessions");
+    expect(mocks.writeRestartSentinel).not.toHaveBeenCalled();
+    expect(mocks.scheduleGatewaySigusr1Restart).not.toHaveBeenCalled();
+    expect(mocks.triggerOpenClawRestart).not.toHaveBeenCalled();
+  });
+
   it("rejects authorized non-owner restart commands", async () => {
     const result = await handleRestartCommand(
       restartCommandParams({

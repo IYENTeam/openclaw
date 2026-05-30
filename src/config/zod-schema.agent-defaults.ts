@@ -31,6 +31,21 @@ const OptionalBootstrapFileNameSchema = z.enum([
   "IDENTITY.md",
 ]);
 
+const TaskDraftGateSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    channels: z.array(z.string().min(1)).optional(),
+    targets: z.array(z.string().min(1)).optional(),
+    chatTypes: z
+      .array(
+        z.union([z.literal("direct"), z.literal("dm"), z.literal("group"), z.literal("channel")]),
+      )
+      .optional(),
+    bypassPrefixes: z.array(z.string().min(1)).optional(),
+  })
+  .strict()
+  .optional();
+
 export const SilentReplyPolicyConfigSchema = z
   .object({
     direct: SilentReplyPolicySchema.optional(),
@@ -128,6 +143,7 @@ export const AgentDefaultsSchema = z
       })
       .strict()
       .optional(),
+    taskDraftGate: TaskDraftGateSchema,
     contextLimits: AgentContextLimitsSchema,
     timeFormat: z.union([z.literal("auto"), z.literal("12"), z.literal("24")]).optional(),
     envelopeTimezone: z.string().optional(),

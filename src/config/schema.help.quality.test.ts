@@ -833,7 +833,7 @@ describe("config help copy quality", () => {
 
     const recentTurnsPreserve = FIELD_HELP["agents.defaults.compaction.recentTurnsPreserve"];
     expect(/recent.*turn|verbatim/i.test(recentTurnsPreserve)).toBe(true);
-    expect(/default:\s*3/i.test(recentTurnsPreserve)).toBe(true);
+    expect(/default:\s*6/i.test(recentTurnsPreserve)).toBe(true);
 
     const midTurnPrecheck = FIELD_HELP["agents.defaults.compaction.midTurnPrecheck.enabled"];
     expect(/mid-turn|tool loop|default:\s*false/i.test(midTurnPrecheck)).toBe(true);

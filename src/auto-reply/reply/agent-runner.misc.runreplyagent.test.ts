@@ -163,7 +163,11 @@ beforeEach(() => {
     reason: "test-preflight-disabled",
   });
   clearSessionQueuesMock.mockReset();
-  clearSessionQueuesMock.mockReturnValue({ followupCleared: 0, laneCleared: 0, keys: [] });
+  clearSessionQueuesMock.mockReturnValue({
+    followupCleared: 0,
+    laneCleared: 0,
+    keys: [],
+  });
   refreshQueuedFollowupSessionMock.mockReset();
   refreshQueuedFollowupSessionMock.mockResolvedValue(undefined);
   vi.mocked(scheduleFollowupDrain).mockReset();
@@ -328,6 +332,142 @@ describe("runReplyAgent auto-compaction token update", () => {
     expect(stored[sessionKey].totalTokens).toBe(55_000);
   });
 
+  it("returns a draft and queues the actual task when task draft gate matches", async () => {
+    const sessionKey = "main";
+    const sessionEntry = {
+      sessionId: "session",
+      updatedAt: Date.now(),
+      totalTokens: 50_000,
+    };
+    const { typing, resolvedQueue, followupRun } = createBaseRun({
+      storePath: "",
+      sessionEntry,
+    });
+    const sessionCtx = {
+      Provider: "discord",
+      Surface: "discord",
+      ChatType: "channel",
+      OriginatingChannel: "discord",
+      OriginatingTo: "1506217431465463929",
+      Body: "이거 고쳐",
+      CommandBody: "이거 고쳐",
+      MessageSid: "msg-draft",
+    } as unknown as TemplateContext;
+
+    const result = await runReplyAgent({
+      commandBody: "이거 고쳐",
+      followupRun,
+      queueKey: sessionKey,
+      resolvedQueue,
+      shouldSteer: false,
+      shouldFollowup: false,
+      isActive: false,
+      isStreaming: false,
+      typing,
+      sessionCtx,
+      sessionEntry,
+      sessionStore: { [sessionKey]: sessionEntry },
+      sessionKey,
+      defaultModel: "anthropic/claude-opus-4-6",
+      agentCfgContextTokens: 200_000,
+      agentDefaults: {
+        taskDraftGate: {
+          enabled: true,
+          channels: ["discord"],
+          targets: ["1506217431465463929"],
+        },
+      },
+      resolvedVerboseLevel: "off",
+      isNewSession: false,
+      blockStreamingEnabled: false,
+      resolvedBlockStreamingBreak: "message_end",
+      shouldInjectGroupIntro: false,
+      typingMode: "instant",
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({ text: expect.stringContaining("Task Draft") }),
+    );
+    expect(runEmbeddedPiAgentMock).not.toHaveBeenCalled();
+    expect(vi.mocked(scheduleFollowupDrain)).toHaveBeenCalledWith(sessionKey, expect.any(Function));
+    const enqueueMock = (await import("./queue.js")).enqueueFollowupRun as unknown as ReturnType<
+      typeof vi.fn
+    >;
+    expect(enqueueMock).toHaveBeenCalledWith(
+      sessionKey,
+      expect.objectContaining({
+        run: expect.objectContaining({ taskDraftGateContinuation: true }),
+      }),
+      expect.objectContaining({ mode: "queue" }),
+      "message-id",
+      expect.any(Function),
+      false,
+    );
+  });
+
+  it("bypasses task draft gate for explicit go-ahead prefixes", async () => {
+    const sessionKey = "main";
+    const sessionEntry = {
+      sessionId: "session",
+      updatedAt: Date.now(),
+      totalTokens: 50_000,
+    };
+    runEmbeddedPiAgentMock.mockResolvedValue({
+      payloads: [{ text: "executed" }],
+      meta: { agentMeta: {} },
+    });
+
+    const { typing, resolvedQueue, followupRun } = createBaseRun({
+      storePath: "",
+      sessionEntry,
+    });
+    const sessionCtx = {
+      Provider: "discord",
+      Surface: "discord",
+      ChatType: "channel",
+      OriginatingChannel: "discord",
+      OriginatingTo: "1506217431465463929",
+      Body: "ㄱㄱ 이거 고쳐",
+      CommandBody: "ㄱㄱ 이거 고쳐",
+      MessageSid: "msg-go",
+    } as unknown as TemplateContext;
+
+    const result = await runReplyAgent({
+      commandBody: "ㄱㄱ 이거 고쳐",
+      followupRun,
+      queueKey: sessionKey,
+      resolvedQueue,
+      shouldSteer: false,
+      shouldFollowup: false,
+      isActive: false,
+      isStreaming: false,
+      typing,
+      sessionCtx,
+      sessionEntry,
+      sessionStore: { [sessionKey]: sessionEntry },
+      sessionKey,
+      defaultModel: "anthropic/claude-opus-4-6",
+      agentCfgContextTokens: 200_000,
+      agentDefaults: {
+        taskDraftGate: {
+          enabled: true,
+          channels: ["discord"],
+          targets: ["1506217431465463929"],
+        },
+      },
+      resolvedVerboseLevel: "off",
+      isNewSession: false,
+      blockStreamingEnabled: false,
+      resolvedBlockStreamingBreak: "message_end",
+      shouldInjectGroupIntro: false,
+      typingMode: "instant",
+    });
+
+    expect(result).toEqual(expect.objectContaining({ text: expect.stringContaining("executed") }));
+    expect(runEmbeddedPiAgentMock).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(scheduleFollowupDrain)).not.toHaveBeenCalled();
+  });
+
   it("starts queued followup drain only after clearing the active reply operation", async () => {
     const sessionKey = "main";
     const sessionEntry = {
@@ -383,8 +523,18 @@ describe("runReplyAgent auto-compaction token update", () => {
       tmpPrefix: "openclaw-usage-diagnostic-",
       collectDiagnostics: true,
       agentMeta: {
-        usage: { input: 75_000, output: 5_000, cacheRead: 25_000, total: 105_000 },
-        lastCallUsage: { input: 55_000, output: 2_000, cacheRead: 25_000, total: 82_000 },
+        usage: {
+          input: 75_000,
+          output: 5_000,
+          cacheRead: 25_000,
+          total: 105_000,
+        },
+        lastCallUsage: {
+          input: 55_000,
+          output: 2_000,
+          cacheRead: 25_000,
+          total: 82_000,
+        },
         promptTokens: 44_000,
       },
     });
@@ -411,7 +561,12 @@ describe("runReplyAgent auto-compaction token update", () => {
       tmpPrefix: "openclaw-usage-diagnostic-last-",
       collectDiagnostics: true,
       agentMeta: {
-        usage: { input: 75_000, output: 5_000, cacheRead: 25_000, total: 105_000 },
+        usage: {
+          input: 75_000,
+          output: 5_000,
+          cacheRead: 25_000,
+          total: 105_000,
+        },
         lastCallUsage: {
           input: 55_000,
           output: 2_000,
@@ -1000,14 +1155,26 @@ describe("runReplyAgent Active Memory inline debug", () => {
           message: {
             role: "user",
             content: "Earlier turn",
-            usage: { input: 400, output: 20, cacheRead: 100, cacheWrite: 50, total: 570 },
+            usage: {
+              input: 400,
+              output: 20,
+              cacheRead: 100,
+              cacheWrite: 50,
+              total: 570,
+            },
           },
         }),
         JSON.stringify({
           message: {
             role: "assistant",
             content: "Earlier reply",
-            usage: { input: 200, output: 10, cacheRead: 20, cacheWrite: 5, total: 235 },
+            usage: {
+              input: 200,
+              output: 10,
+              cacheRead: 20,
+              cacheWrite: 5,
+              total: 235,
+            },
           },
         }),
       ].join("\n"),
@@ -1059,8 +1226,20 @@ describe("runReplyAgent Active Memory inline debug", () => {
           sessionId: "session",
           provider: "anthropic",
           model: "claude",
-          usage: { input: 1200, output: 45, cacheRead: 800, cacheWrite: 200, total: 2245 },
-          lastCallUsage: { input: 1000, output: 45, cacheRead: 750, cacheWrite: 150, total: 1945 },
+          usage: {
+            input: 1200,
+            output: 45,
+            cacheRead: 800,
+            cacheWrite: 200,
+            total: 2245,
+          },
+          lastCallUsage: {
+            input: 1000,
+            output: 45,
+            cacheRead: 750,
+            cacheWrite: 150,
+            total: 1945,
+          },
           promptTokens: 1250,
           compactionCount: 1,
         },
@@ -1350,7 +1529,13 @@ describe("runReplyAgent Active Memory inline debug", () => {
           provider: "anthropic",
           model: "claude",
           usage: { input: 34834, output: 49, cacheRead: 64, total: 34947 },
-          lastCallUsage: { input: 34834, output: 49, cacheRead: 64, cacheWrite: 0, total: 34947 },
+          lastCallUsage: {
+            input: 34834,
+            output: 49,
+            cacheRead: 64,
+            cacheWrite: 0,
+            total: 34947,
+          },
         },
       },
     });
@@ -1609,7 +1794,9 @@ describe("runReplyAgent Active Memory inline debug", () => {
       typingMode: "instant",
     });
 
-    expect(loadSessionStoreSpy).not.toHaveBeenCalledWith(storePath, { skipCache: true });
+    expect(loadSessionStoreSpy).not.toHaveBeenCalledWith(storePath, {
+      skipCache: true,
+    });
     expect(result).toMatchObject({ text: "Normal reply" });
   });
 });
@@ -1822,7 +2009,9 @@ describe("runReplyAgent claude-cli routing", () => {
         messageProvider: "webchat",
         sessionFile: "/tmp/session.jsonl",
         workspaceDir: "/tmp",
-        config: { agents: { defaults: { agentRuntime: { id: "claude-cli" } } } },
+        config: {
+          agents: { defaults: { agentRuntime: { id: "claude-cli" } } },
+        },
         skillsSnapshot: {},
         provider: "anthropic",
         model: "claude-opus-4-7",

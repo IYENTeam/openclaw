@@ -209,9 +209,19 @@ export function applyAnthropicConfigDefaults(params: {
 
   if (defaults.contextPruning?.mode === undefined) {
     nextDefaults.contextPruning = {
+      keepLastAssistants: 2,
+      softTrimRatio: 0.18,
+      hardClearRatio: 0.18,
+      minPrunableToolChars: 2_000,
+      softTrim: { maxChars: 0, headChars: 0, tailChars: 0 },
+      hardClear: {
+        enabled: true,
+        placeholder:
+          "[Old tool result omitted from active context. Re-run the tool or inspect the archived session transcript if exact output is needed.]",
+      },
       ...contextPruning,
       mode: "cache-ttl",
-      ttl: defaults.contextPruning?.ttl ?? "1h",
+      ttl: defaults.contextPruning?.ttl ?? "10m",
     };
     mutated = true;
   }

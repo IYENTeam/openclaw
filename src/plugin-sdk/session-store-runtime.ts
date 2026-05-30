@@ -23,4 +23,10 @@ export {
   resolveSessionResetType,
   resolveThreadFlag,
 } from "../config/sessions/reset.js";
+export {
+  archiveOrphanTranscripts,
+  buildReferencedTranscriptPaths,
+  findOrphanTranscriptPaths,
+  resolveComparableTranscriptPath,
+} from "../config/sessions/orphan-transcript-utils.js";
 export type { SessionEntry, SessionScope } from "../config/sessions/types.js";

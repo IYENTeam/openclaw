@@ -5,7 +5,13 @@ import { applyProviderConfigDefaultsForConfig } from "./provider-policy.js";
 
 function expectAnthropicPruningDefaults(cfg: OpenClawConfig, heartbeatEvery = "30m") {
   expect(cfg.agents?.defaults?.contextPruning?.mode).toBe("cache-ttl");
-  expect(cfg.agents?.defaults?.contextPruning?.ttl).toBe("1h");
+  expect(cfg.agents?.defaults?.contextPruning?.ttl).toBe("10m");
+  expect(cfg.agents?.defaults?.contextPruning?.keepLastAssistants).toBe(2);
+  expect(cfg.agents?.defaults?.contextPruning?.softTrim).toEqual({
+    maxChars: 0,
+    headChars: 0,
+    tailChars: 0,
+  });
   expect(cfg.agents?.defaults?.heartbeat?.every).toBe(heartbeatEvery);
 }
 
@@ -44,7 +50,7 @@ describe("config pruning defaults", () => {
     expectAnthropicPruningDefaults(cfg, "1h");
   });
 
-  it("enables cache-ttl pruning + 1h cache TTL for Anthropic API keys", async () => {
+  it("enables cache-ttl pruning + 10m cache TTL for Anthropic API keys", async () => {
     const cfg = applyAnthropicDefaultsForTest({
       auth: {
         profiles: {

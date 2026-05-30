@@ -101,6 +101,8 @@ export type FollowupRun = {
     skipProviderRuntimeHints?: boolean;
     silentExpected?: boolean;
     allowEmptyAssistantReplyAsSilent?: boolean;
+    /** Internal marker: this run was enqueued after a visible task-draft gate reply. */
+    taskDraftGateContinuation?: boolean;
   };
 };
 

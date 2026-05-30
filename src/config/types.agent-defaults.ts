@@ -20,6 +20,19 @@ export type AgentContextInjection = "always" | "continuation-skip" | "never";
 export type OptionalBootstrapFileName = "SOUL.md" | "USER.md" | "HEARTBEAT.md" | "IDENTITY.md";
 export type EmbeddedPiExecutionContract = "default" | "strict-agentic";
 
+export type TaskDraftGateConfig = {
+  /** Enable a runtime-owned draft-only first turn before tool execution. */
+  enabled?: boolean;
+  /** Restrict the gate to inbound channels/providers, e.g. ["discord"]. Empty/unset means any channel. */
+  channels?: string[];
+  /** Restrict the gate to provider-native destinations/channel ids. Empty/unset means any destination. */
+  targets?: string[];
+  /** Restrict the gate to chat types. Empty/unset defaults to group/channel only. */
+  chatTypes?: Array<"direct" | "dm" | "group" | "channel">;
+  /** Sender text prefixes that bypass the gate and execute immediately, e.g. ㄱㄱ. */
+  bypassPrefixes?: string[];
+};
+
 export type Gpt5PromptOverlayConfig = {
   /** Friendly interaction-style layer for GPT-5-family models (default: friendly). */
   personality?: "friendly" | "on" | "off";
@@ -270,6 +283,8 @@ export type AgentDefaultsConfig = {
   userTimezone?: string;
   /** Runtime-owned first-turn startup context for bare /new and /reset. */
   startupContext?: AgentStartupContextConfig;
+  /** Runtime-owned draft-only gate before starting tool-capable task turns. */
+  taskDraftGate?: TaskDraftGateConfig;
   /** Focused context-budget overrides for high-volume injected/read surfaces. */
   contextLimits?: AgentContextLimitsConfig;
   /** Time format in system prompt: auto (OS preference), 12-hour, or 24-hour. */

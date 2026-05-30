@@ -502,7 +502,7 @@ export const FIELD_HELP: Record<string, string> = {
   "gateway.http.endpoints.chatCompletions.images.maxBytes":
     "Max bytes per fetched/decoded `image_url` image (default: 10MB).",
   "gateway.http.endpoints.chatCompletions.images.maxRedirects":
-    "Max HTTP redirects allowed when fetching `image_url` URLs (default: 3).",
+    "Max HTTP redirects allowed when fetching `image_url` URLs (default: 6).",
   "gateway.http.endpoints.chatCompletions.images.timeoutMs":
     "Timeout in milliseconds for `image_url` URL fetches (default: 10000).",
   "gateway.reload.mode":
@@ -651,7 +651,7 @@ export const FIELD_HELP: Record<string, string> = {
     'Optional allowlist of model ids (e.g. "gpt-5.4" or "openai/gpt-5.4").',
   "tools.loopDetection.enabled":
     "Enable repetitive tool-call loop detection and backoff safety checks (default: false).",
-  "tools.loopDetection.historySize": "Tool history window size for loop detection (default: 30).",
+  "tools.loopDetection.historySize": "Tool history window size for loop detection (default: 60).",
   "tools.loopDetection.warningThreshold":
     "Warning threshold for repetitive patterns when detector is enabled (default: 10).",
   "tools.loopDetection.unknownToolThreshold":
@@ -659,14 +659,14 @@ export const FIELD_HELP: Record<string, string> = {
   "tools.loopDetection.criticalThreshold":
     "Critical threshold for repetitive patterns when detector is enabled (default: 20).",
   "tools.loopDetection.globalCircuitBreakerThreshold":
-    "Global no-progress breaker threshold (default: 30).",
+    "Global no-progress breaker threshold (default: 60).",
   "tools.loopDetection.detectors.genericRepeat":
     "Enable generic repeated same-tool/same-params loop detection (default: true).",
   "tools.loopDetection.detectors.knownPollNoProgress":
     "Enable known poll tool no-progress loop detection (default: true).",
   "tools.loopDetection.detectors.pingPong": "Enable ping-pong loop detection (default: true).",
   "tools.loopDetection.postCompactionGuard.windowSize":
-    "Number of post-compaction attempts during which the guard stays armed (default: 3). Lower values are stricter; higher values give the agent more attempts before abort.",
+    "Number of post-compaction attempts during which the guard stays armed (default: 6). Lower values are stricter; higher values give the agent more attempts before abort.",
   "tools.exec.notifyOnExit":
     "When true (default), backgrounded exec sessions on exit and node exec lifecycle events enqueue a system event and request a heartbeat.",
   "tools.exec.notifyOnExitEmptySuccess":
@@ -839,7 +839,7 @@ export const FIELD_HELP: Record<string, string> = {
   "tools.web.fetch.provider": "Web fetch fallback provider id.",
   "tools.web.fetch.timeoutSeconds": "Timeout in seconds for web_fetch requests.",
   "tools.web.fetch.cacheTtlMinutes": "Cache TTL in minutes for web_fetch results.",
-  "tools.web.fetch.maxRedirects": "Maximum redirects allowed for web_fetch (default: 3).",
+  "tools.web.fetch.maxRedirects": "Maximum redirects allowed for web_fetch (default: 6).",
   "tools.web.fetch.userAgent": "Override User-Agent header for web_fetch requests.",
   "tools.web.fetch.readability":
     "Use Readability to extract main content from HTML (fallbacks to basic HTML cleanup).",
@@ -1108,7 +1108,7 @@ export const FIELD_HELP: Record<string, string> = {
   "agents.defaults.memorySearch.query.hybrid.temporalDecay.enabled":
     "Applies recency decay so newer memory can outrank older memory when scores are close. Enable when timeliness matters; keep off for timeless reference knowledge.",
   "agents.defaults.memorySearch.query.hybrid.temporalDecay.halfLifeDays":
-    "Controls how fast older memory loses rank when temporal decay is enabled (half-life in days, default: 30). Lower values prioritize recent context more aggressively.",
+    "Controls how fast older memory loses rank when temporal decay is enabled (half-life in days, default: 60). Lower values prioritize recent context more aggressively.",
   "agents.defaults.memorySearch.cache.enabled":
     "Caches computed chunk embeddings in SQLite so reindexing and incremental updates run faster (default: true). Keep this enabled unless investigating cache correctness or minimizing disk usage.",
   memory: "Memory backend configuration (global).",
@@ -1161,7 +1161,7 @@ export const FIELD_HELP: Record<string, string> = {
   "memory.qmd.update.embedInterval":
     "Sets how often QMD recomputes embeddings (duration string, default: 60m; set 0 to disable periodic embeds). Lower intervals improve freshness but increase embedding workload and cost.",
   "memory.qmd.update.commandTimeoutMs":
-    "Sets timeout for QMD maintenance commands such as collection list/add in milliseconds (default: 30000). Increase when running on slower disks or remote filesystems that delay command completion.",
+    "Sets timeout for QMD maintenance commands such as collection list/add in milliseconds (default: 60000). Increase when running on slower disks or remote filesystems that delay command completion.",
   "memory.qmd.update.updateTimeoutMs":
     "Sets maximum runtime for each `qmd update` cycle in milliseconds (default: 120000). Raise this for larger collections; lower it when you want quicker failure detection in automation.",
   "memory.qmd.update.embedTimeoutMs":
@@ -1316,7 +1316,7 @@ export const FIELD_HELP: Record<string, string> = {
   "agents.defaults.compaction.identifierInstructions":
     'Custom identifier-preservation instruction text used when identifierPolicy="custom". Keep this explicit and safety-focused so compaction summaries do not rewrite opaque IDs, URLs, hosts, or ports.',
   "agents.defaults.compaction.recentTurnsPreserve":
-    "Number of most recent user/assistant turns kept verbatim outside safeguard summarization (default: 3). Raise this to preserve exact recent dialogue context, or lower it to maximize compaction savings.",
+    "Number of most recent user/assistant turns kept verbatim outside safeguard summarization (default: 6). Raise this to preserve exact recent dialogue context, or lower it to maximize compaction savings.",
   "agents.defaults.compaction.qualityGuard":
     "Quality-audit retry settings for safeguard compaction summaries. Safeguard mode enables this by default; set enabled: false to skip summary audits and regeneration.",
   "agents.defaults.compaction.qualityGuard.enabled":
@@ -1507,7 +1507,7 @@ export const FIELD_HELP: Record<string, string> = {
   "cron.retry":
     "Overrides the default retry policy for one-shot jobs when they fail with transient errors (rate limit, overloaded, network, server_error). Omit to use defaults: maxAttempts 3, backoffMs [30000, 60000, 300000], retry all transient types.",
   "cron.retry.maxAttempts":
-    "Max retries for one-shot jobs on transient errors before permanent disable (default: 3).",
+    "Max retries for one-shot jobs on transient errors before permanent disable (default: 6).",
   "cron.retry.backoffMs":
     "Backoff delays in ms for each retry attempt (default: [30000, 60000, 300000]). Use shorter values for faster retries.",
   "cron.retry.retryOn":

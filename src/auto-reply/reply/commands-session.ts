@@ -42,6 +42,18 @@ const SESSION_DURATION_OFF_VALUES = new Set(["off", "disable", "disabled", "none
 const SESSION_ACTION_IDLE = "idle";
 const SESSION_ACTION_MAX_AGE = "max-age";
 
+function isDiscordCommandSurface(params: HandleCommandsParams): boolean {
+  const values = [
+    params.command.surface,
+    params.command.channel,
+    params.ctx.Surface,
+    params.ctx.Provider,
+    params.rootCtx?.Surface,
+    params.rootCtx?.Provider,
+  ];
+  return values.some((value) => normalizeOptionalLowercaseString(value) === "discord");
+}
+
 function buildRestartCommandSentinel(params: HandleCommandsParams): RestartSentinelPayload | null {
   const sessionKey = normalizeOptionalString(params.sessionKey);
   if (!sessionKey) {
@@ -666,6 +678,14 @@ export const handleRestartCommand: CommandHandler = async (params, allowTextComm
   const nonOwner = rejectNonOwnerCommand(params, "/restart");
   if (nonOwner) {
     return nonOwner;
+  }
+  if (isDiscordCommandSurface(params)) {
+    return {
+      shouldContinue: false,
+      reply: {
+        text: "⚠️ /restart is blocked from Discord sessions to avoid disconnecting the Discord gateway and losing in-flight messages. Use the web/main session or the local CLI for gateway restarts.",
+      },
+    };
   }
   if (!isRestartEnabled(params.cfg)) {
     return {
