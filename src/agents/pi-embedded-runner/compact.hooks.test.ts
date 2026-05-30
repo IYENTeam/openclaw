@@ -898,6 +898,50 @@ describe("compactEmbeddedPiSessionDirect hooks", () => {
     expect(compactTesting.containsRealConversationMessages(messages)).toBe(false);
   });
 
+  it("allows forced overflow compaction to reach the safeguard boundary path", async () => {
+    expect(
+      compactTesting.shouldSkipNoRealConversationCompaction({
+        sessionId: "s1",
+        sessionFile: TEST_SESSION_FILE,
+        workspaceDir: TEST_WORKSPACE_DIR,
+        force: true,
+        trigger: "overflow",
+      }),
+    ).toBe(false);
+    expect(
+      compactTesting.shouldSkipNoRealConversationCompaction({
+        sessionId: "s1",
+        sessionFile: TEST_SESSION_FILE,
+        workspaceDir: TEST_WORKSPACE_DIR,
+        trigger: "manual",
+      }),
+    ).toBe(true);
+  });
+
+  it("does not return before the compaction safeguard on forced tool-only overflow", async () => {
+    sessionMessages.splice(
+      0,
+      sessionMessages.length,
+      { role: "user", content: "<b>HEARTBEAT_OK</b>", timestamp: 1 },
+      {
+        role: "toolResult",
+        toolCallId: "t1",
+        toolName: "exec",
+        content: [{ type: "text", text: "large tool tail" }],
+        isError: false,
+        timestamp: 2,
+      },
+    );
+
+    const result = await compactEmbeddedPiSessionDirect({
+      ...wrappedCompactionArgs({ force: true, trigger: "overflow" }),
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.compacted).toBe(true);
+    expect(sessionCompactImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("does not treat assistant-only tool-call blocks as meaningful conversation", () => {
     expect(
       compactTesting.hasMeaningfulConversationContent({

@@ -333,6 +333,14 @@ function containsRealConversationMessages(messages: AgentMessage[]): boolean {
   );
 }
 
+function shouldSkipNoRealConversationCompaction(params: CompactEmbeddedPiSessionParams): boolean {
+  // Forced recovery compactions are intentionally allowed to proceed even when
+  // the summarizable window no longer contains a visible user/assistant anchor.
+  // The compaction safeguard hook can then write a minimal boundary entry, which
+  // breaks overflow retry loops caused by large tool-only tails.
+  return params.force !== true;
+}
+
 function hasExplicitCompactionModel(params: CompactEmbeddedPiSessionParams): boolean {
   return Boolean(params.config?.agents?.defaults?.compaction?.model?.trim());
 }
@@ -1173,14 +1181,20 @@ async function compactEmbeddedPiSessionDirectOnce(
           }
 
           if (!containsRealConversationMessages(session.messages)) {
+            if (shouldSkipNoRealConversationCompaction(params)) {
+              log.info(
+                `[compaction] skipping — no real conversation messages (sessionKey=${params.sessionKey ?? params.sessionId})`,
+              );
+              return {
+                ok: true,
+                compacted: false,
+                reason: "no real conversation messages",
+              };
+            }
             log.info(
-              `[compaction] skipping — no real conversation messages (sessionKey=${params.sessionKey ?? params.sessionId})`,
+              `[compaction] continuing forced compaction without real conversation anchors ` +
+                `(sessionKey=${params.sessionKey ?? params.sessionId}); safeguard may write a boundary`,
             );
-            return {
-              ok: true,
-              compacted: false,
-              reason: "no real conversation messages",
-            };
           }
 
           const compactStartedAt = Date.now();
@@ -1416,6 +1430,7 @@ export const __testing = {
   hasRealConversationContent,
   hasMeaningfulConversationContent,
   containsRealConversationMessages,
+  shouldSkipNoRealConversationCompaction,
   estimateTokensAfterCompaction,
   buildBeforeCompactionHookMetrics,
   hardenManualCompactionBoundary,
