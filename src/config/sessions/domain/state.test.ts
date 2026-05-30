@@ -68,7 +68,7 @@ describe("session state domain adapters", () => {
     });
   });
 
-  it("patches only one plugin extension namespace", () => {
+  it("patches only one plugin extension namespace without claiming slot projection ownership", () => {
     const patched = patchSessionPluginExtension({
       entry: richEntry,
       pluginId: "demo",
@@ -82,6 +82,7 @@ describe("session state domain adapters", () => {
       },
     });
     expect(patched.pluginExtensionSlotKeys).toEqual({ demo: { custom: "demoCustom" } });
+    expect((patched as Record<string, unknown>).other).toBeUndefined();
     expect(patched.sessionFile).toBe(richEntry.sessionFile);
   });
 

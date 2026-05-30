@@ -68,6 +68,15 @@ function assertPluginExtensionKey(value: string, label: string): string {
   return trimmed;
 }
 
+/**
+ * Pure domain merge helper for already-projected plugin extension state.
+ *
+ * Production plugin session-extension writes that expose a top-level slot must
+ * continue to use the host-hook patch path; that path owns slot projection,
+ * `pluginExtensionSlotKeys`, and removal of stale projected slot values. This
+ * helper intentionally preserves slot metadata but does not create or update
+ * projected slots.
+ */
 export function patchSessionPluginExtension(params: {
   entry: SessionEntry;
   pluginId: string;
