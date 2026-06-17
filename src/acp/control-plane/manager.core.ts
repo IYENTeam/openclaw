@@ -88,6 +88,8 @@ const ACP_TURN_TIMEOUT_CLEANUP_GRACE_MS = 2_000;
 const ACP_TURN_TIMEOUT_REASON = "turn-timeout";
 const ACP_BACKGROUND_TASK_TEXT_MAX_LENGTH = 160;
 const ACP_BACKGROUND_TASK_PROGRESS_MAX_LENGTH = 240;
+const ACP_META_POLL_INTERVAL_MS = 200;
+const ACP_META_POLL_MAX_ATTEMPTS = 15;
 
 function summarizeBackgroundTaskText(text: string): string {
   const normalized = normalizeText(text) ?? "ACP background task";
@@ -174,7 +176,10 @@ export class AcpSessionManager {
 
   constructor(private readonly deps: AcpSessionManagerDeps = DEFAULT_DEPS) {}
 
-  resolveSession(params: { cfg: OpenClawConfig; sessionKey: string }): AcpSessionResolution {
+  async resolveSession(params: {
+    cfg: OpenClawConfig;
+    sessionKey: string;
+  }): Promise<AcpSessionResolution> {
     const sessionKey = canonicalizeAcpSessionKey(params);
     if (!sessionKey) {
       return {
@@ -194,6 +199,25 @@ export class AcpSessionManager {
       };
     }
     if (isAcpSessionKey(sessionKey)) {
+      // Race condition: sessions_patch created the session entry but ACP metadata
+      // (initializeAcpSpawnRuntime) hasn't been written yet. Poll briefly before
+      // giving up to avoid ACP_SESSION_INIT_FAILED on the first message.
+      for (let attempt = 0; attempt < ACP_META_POLL_MAX_ATTEMPTS; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, ACP_META_POLL_INTERVAL_MS));
+        const retryEntry = this.deps.readSessionEntry({
+          cfg: params.cfg,
+          sessionKey,
+          skipCache: true,
+        });
+        const retryAcp = retryEntry?.acp;
+        if (retryAcp) {
+          return {
+            kind: "ready",
+            sessionKey,
+            meta: retryAcp,
+          };
+        }
+      }
       return {
         kind: "stale",
         sessionKey,
@@ -263,7 +287,7 @@ export class AcpSessionManager {
       checked += 1;
       try {
         const becameResolved = await this.withSessionActor(session.sessionKey, async () => {
-          const resolution = this.resolveSession({
+          const resolution = await this.resolveSession({
             cfg: params.cfg,
             sessionKey: session.sessionKey,
           });
@@ -446,7 +470,7 @@ export class AcpSessionManager {
       sessionKey,
       async () => {
         this.throwIfAborted(params.signal);
-        const resolution = this.resolveSession({
+        const resolution = await this.resolveSession({
           cfg: params.cfg,
           sessionKey,
         });
@@ -520,7 +544,7 @@ export class AcpSessionManager {
 
     await this.evictIdleRuntimeHandles({ cfg: params.cfg });
     return await this.withSessionActor(sessionKey, async () => {
-      const resolution = this.resolveSession({
+      const resolution = await this.resolveSession({
         cfg: params.cfg,
         sessionKey,
       });
@@ -577,7 +601,7 @@ export class AcpSessionManager {
 
     await this.evictIdleRuntimeHandles({ cfg: params.cfg });
     return await this.withSessionActor(sessionKey, async () => {
-      const resolution = this.resolveSession({
+      const resolution = await this.resolveSession({
         cfg: params.cfg,
         sessionKey,
       });
@@ -648,7 +672,7 @@ export class AcpSessionManager {
 
     await this.evictIdleRuntimeHandles({ cfg: params.cfg });
     return await this.withSessionActor(sessionKey, async () => {
-      const resolution = this.resolveSession({
+      const resolution = await this.resolveSession({
         cfg: params.cfg,
         sessionKey,
       });
@@ -676,7 +700,7 @@ export class AcpSessionManager {
     }
     await this.evictIdleRuntimeHandles({ cfg: params.cfg });
     return await this.withSessionActor(sessionKey, async () => {
-      const resolution = this.resolveSession({
+      const resolution = await this.resolveSession({
         cfg: params.cfg,
         sessionKey,
       });
@@ -733,7 +757,7 @@ export class AcpSessionManager {
         }
         let taskProgressSummary = "";
         for (let attempt = 0; attempt < 2; attempt += 1) {
-          const resolution = this.resolveSession({
+          const resolution = await this.resolveSession({
             cfg: input.cfg,
             sessionKey,
           });
@@ -1179,7 +1203,7 @@ export class AcpSessionManager {
     }
 
     await this.withSessionActor(sessionKey, async () => {
-      const resolution = this.resolveSession({
+      const resolution = await this.resolveSession({
         cfg: params.cfg,
         sessionKey,
       });
@@ -1232,7 +1256,7 @@ export class AcpSessionManager {
     }
     await this.evictIdleRuntimeHandles({ cfg: input.cfg });
     return await this.withSessionActor(sessionKey, async () => {
-      const resolution = this.resolveSession({
+      const resolution = await this.resolveSession({
         cfg: input.cfg,
         sessionKey,
       });

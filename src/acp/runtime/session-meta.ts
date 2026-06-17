@@ -65,6 +65,7 @@ export function resolveSessionStorePathForAcp(params: {
 export function readAcpSessionEntry(params: {
   sessionKey: string;
   cfg?: OpenClawConfig;
+  skipCache?: boolean;
 }): AcpSessionStoreEntry | null {
   const sessionKey = params.sessionKey.trim();
   if (!sessionKey) {
@@ -77,7 +78,7 @@ export function readAcpSessionEntry(params: {
   let store: Record<string, SessionEntry>;
   let storeReadFailed = false;
   try {
-    store = loadSessionStore(storePath);
+    store = loadSessionStore(storePath, { skipCache: params.skipCache });
   } catch {
     storeReadFailed = true;
     store = {};
